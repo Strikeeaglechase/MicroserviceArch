@@ -1,6 +1,6 @@
 import type * as ts from 'typescript';
 import type { TransformerExtras, PluginConfig } from 'ts-patch';
-import fs from "fs";
+import * as fs from "fs";
 
 const serviceCallableDecorator = `@Callable`;
 const serviceEventDecorator = `@Event`;

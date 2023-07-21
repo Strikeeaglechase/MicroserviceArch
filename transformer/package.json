@@ -1,0 +1,17 @@
+{
+	"name": "service-transformer",
+	"version": "1.0.0",
+	"description": "",
+	"main": "dist/serviceTransformer.js",
+	"scripts": {
+		"prepare": "ts-patch install -s"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"dependencies": {
+		"ts-node": "^10.9.1",
+		"typescript": "^5.0.0",
+		"ts-patch": "^3.0.1"
+	}
+}
