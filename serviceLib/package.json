@@ -1,11 +1,12 @@
 {
-	"name": "a",
+	"name": "microservice-service-lib",
 	"version": "1.0.0",
 	"description": "",
 	"main": "index.js",
 	"type": "module",
 	"scripts": {
-		"prepare": "ts-patch install -s"
+		"prepare": "ts-patch install -s",
+		"build": "npx tsc"
 	},
 	"keywords": [],
 	"author": "",
