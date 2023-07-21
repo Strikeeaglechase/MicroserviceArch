@@ -10,7 +10,7 @@ class ServiceConnector {
 
 	private registeredServices: Record<string, object> = {};
 	private replyHandlers: Record<string, (res: any) => void> = {};
-	private eventHandlers: Record<string, ((...args: any[]) => void)[]> = {};
+	private eventHandlers: Record<`${string}.${string}`, ((...args: any[]) => void)[]> = {};
 
 	public static instance: ServiceConnector;
 
@@ -27,18 +27,17 @@ class ServiceConnector {
 	}
 
 	public execEventCall(serviceIdentifier: string, method: string, args: any[]) {
-		// const packet = PacketBuilder.eventCall(serviceIdentifier, method, args);
-		// this.send(packet);
 		const packet = PacketBuilder.fireEvent(serviceIdentifier, method, args);
 		this.send(packet);
 	}
 
 	public registerEventHandler(serviceIdentifier: string, event: string, handler: (...args: any[]) => void) {
-		if (!this.eventHandlers[event]) {
-			this.eventHandlers[event] = [];
+		const eventName = `${serviceIdentifier}.${event}`;
+		if (!this.eventHandlers[eventName]) {
+			this.eventHandlers[eventName] = [];
 			this.send(PacketBuilder.subscribeToEvent(serviceIdentifier, event));
 		}
-		this.eventHandlers[event].push(handler);
+		this.eventHandlers[eventName].push(handler);
 	}
 
 	private async handleServiceCall(packet: ServiceCallPacket) {
@@ -65,7 +64,7 @@ class ServiceConnector {
 				res();
 			};
 			this.socket.onmessage = (event) => this.handleMessage(event.data.toString());
-			this.socket.onerror = (err) => console.error(`Service Handler socket error: `, err);
+			this.socket.onerror = (err) => console.error(`Service Handler socket error: ${err.message}`);
 			this.socket.onclose = () => {
 				console.log(`Service Handler socket closed`);
 				this.connected = false;
@@ -84,6 +83,12 @@ class ServiceConnector {
 			this.send(PacketBuilder.registerService(serviceIdentifier));
 			console.log(`Service Handler registered service ${serviceIdentifier}`);
 		});
+
+		Object.keys(this.eventHandlers).forEach((event) => {
+			const [serviceIdentifier, eventName] = event.split(".");
+			this.send(PacketBuilder.subscribeToEvent(serviceIdentifier, eventName));
+			console.log(`Service Handler subscribed to event ${serviceIdentifier}.${event}`);
+		});
 	}
 
 	private handleReply(packet: ServiceCallResponsePacket) {
@@ -98,7 +103,7 @@ class ServiceConnector {
 	}
 
 	private handleFiredEvent(packet: FireEventPacket) {
-		const handlers = this.eventHandlers[packet.eventName];
+		const handlers = this.eventHandlers[`${packet.serviceIdentifier}.${packet.eventName}`];
 		if (!handlers) return;
 
 		handlers.forEach(handler => handler.apply(null, packet.arguments));

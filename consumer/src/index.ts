@@ -14,7 +14,6 @@ async function test() {
 	MyMicroservice.on("otherEvent", (s) => {
 		console.log(`Received other event: ${s}`);
 	});
-	// MyMicroservice.on("err", () => { });
 }
 
 test();
