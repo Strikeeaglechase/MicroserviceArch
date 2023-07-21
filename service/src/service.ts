@@ -1,5 +1,4 @@
-// import { Callable } from "../../serviceLib/dist/src/serviceHandler.js";
-import { Callable } from "serviceLib/serviceHandler.js";
+import { Callable, Event } from "serviceLib/serviceHandler.js";
 
 class MyMicroservice {
 	@Callable
@@ -9,9 +8,11 @@ class MyMicroservice {
 	}
 
 
-	public internalMethod(arg: string) {
-		console.log(`InternalMethod executed with arg: ${arg}`);
-	}
+	@Event
+	public event(num: number) { }
+
+	@Event
+	public otherEvent(str: string) { }
 }
 
 export { MyMicroservice };

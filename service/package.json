@@ -11,6 +11,7 @@
 	"author": "",
 	"license": "ISC",
 	"dependencies": {
+		"esm": "^3.2.25",
 		"ts-node": "^10.9.1",
 		"typescript": "^5.0.0",
 		"typescript-transform-paths": "^3.4.6"

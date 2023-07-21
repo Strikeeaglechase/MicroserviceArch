@@ -19,9 +19,5 @@
 		]
 	},
 	"include": ["src/"],
-	"references": [
-		{
-			"path": "../serviceLib",
-		}
-	]
+	"references": [{ "path": "../serviceLib" }]
 }
