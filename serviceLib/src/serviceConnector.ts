@@ -68,7 +68,7 @@ class ServiceConnector {
 			this.socket.onclose = () => {
 				console.log(`Service Handler socket closed`);
 				this.connected = false;
-				setTimeout(() => this.connect(), 250);
+				setTimeout(() => this.connect().then(res), 250);
 			};
 		});
 	}

@@ -4,7 +4,7 @@ function Callable(target: any, propertyKey: string, descriptor: PropertyDescript
 function Event(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
 	const orgMethod = descriptor.value;
 	descriptor.value = function (...args: any[]) {
-		console.log(`Event ${propertyKey} called with args: ${args}`);
+		// console.log(`Event ${propertyKey} called with args: ${args}`);
 		const connector = ServiceConnector.instance;
 		if (!connector) {
 			console.log(`Service Handler not connected when calling event ${propertyKey}`);

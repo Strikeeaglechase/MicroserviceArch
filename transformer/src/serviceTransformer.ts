@@ -1,6 +1,7 @@
 import type * as ts from 'typescript';
 import type { TransformerExtras, PluginConfig } from 'ts-patch';
 import * as fs from "fs";
+import * as path from "path";
 
 const serviceCallableDecorator = `@Callable`;
 const serviceEventDecorator = `@Event`;
@@ -12,8 +13,11 @@ function locateLibrary() {
 	let pathToCheck = `.`;
 
 	while (true) {
-		if (fs.existsSync(`${pathToCheck}/serviceLib`)) return `${pathToCheck}/serviceLib`;
+		// console.log(`Checking ${path.resolve(pathToCheck + "/MicroserviceArch/serviceLib")}`);
+		if (fs.existsSync(`${pathToCheck}/MicroserviceArch/serviceLib`)) return `${pathToCheck}/MicroserviceArch/serviceLib`;
 		pathToCheck += `/..`;
+
+		if (pathToCheck.length > 500) process.exit(1);
 	}
 }
 
@@ -35,10 +39,19 @@ interface ServiceEvent {
 	args: ServiceArg[];
 }
 
+interface ServiceExtraType {
+	className: string;
+	name: string;
+	text: string;
+}
+
 const registeredMethods: ServiceMethod[] = [];
 const registeredEvents: ServiceEvent[] = [];
+const registeredExtraTypes: ServiceExtraType[] = [];
 
-function handleServiceCallableMethod(className: string, name: string, node: ts.MethodDeclaration) {
+function handleServiceCallableMethod(className: string, name: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	// Ensure not already registered
+	if (registeredMethods.some(method => method.name == name && method.className == className)) return;
 	console.log(`${className}.${name} is service callable`);
 
 	const args: ServiceArg[] = [];
@@ -47,7 +60,7 @@ function handleServiceCallableMethod(className: string, name: string, node: ts.M
 	});
 
 	let returnType = "void";
-	if (node.type) returnType = node.type.getText();
+	if (node.type) returnType = processReturnType(className, node, tsInstance, typeChecker);
 
 	registeredMethods.push({
 		name,
@@ -57,22 +70,121 @@ function handleServiceCallableMethod(className: string, name: string, node: ts.M
 	});
 }
 
-function handleServiceEventMethod(className: string, name: string, node: ts.MethodDeclaration) {
+function processReturnType(className: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	if (!tsInstance.isTypeReferenceNode(node.type)) return node.type.getText();
+	// const name = node.type.typeName.getText();
+	maybeSaveTypeRefNode(className, node.type, tsInstance, typeChecker);
+
+	return node.type.getText();
+}
+
+const builtinTypes = ["string", "number", "boolean", "void", "any", "unknown", "never", "object", "null", "undefined", "bigint", "symbol", "Promise", "Record", "Array", "Map", "Set"];
+function maybeSaveTypeRefNode(className: string, node: ts.TypeReferenceNode, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	const name = node.typeName.getText();
+	const symbol = typeChecker.getSymbolAtLocation(node.typeName);
+	const type = typeChecker.getDeclaredTypeOfSymbol(symbol);
+
+	maybeSaveType(className, type, tsInstance, typeChecker);
+
+	if (node.typeArguments) {
+		node.typeArguments.forEach(arg => {
+			if (tsInstance.isArrayTypeNode(arg)) {
+				const et = arg.elementType;
+				if (tsInstance.isTypeReferenceNode(et)) maybeSaveTypeRefNode(className, et, tsInstance, typeChecker);
+				return;
+			} else if (!tsInstance.isTypeReferenceNode(arg)) {
+				// console.log(arg);
+				console.log(`Not a type reference node: ${arg.getText()}`);
+				return;
+			}
+			maybeSaveTypeRefNode(className, arg, tsInstance, typeChecker);
+		});
+	}
+}
+
+function maybeSaveType(className: string, type: ts.Type, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	if (!type.symbol) {
+		// @ts-ignore
+		// console.log(`No symbol for type: ${type.intrinsicName} `);
+		return;
+	}
+	const name = type.symbol.name;
+	if ("resolvedTypeArguments" in type) {
+		(type.resolvedTypeArguments as ts.Type[]).forEach(arg => {
+			maybeSaveType(className, arg, tsInstance, typeChecker);
+		});
+	}
+	if (builtinTypes.includes(name) || registeredExtraTypes.some(t => t.name == name && t.className == className)) return;
+	// Create entry now to prevent cyclic dependency causing infinite loop
+	const entry: ServiceExtraType = { className, name, text: "" };
+	registeredExtraTypes.push(entry);
+
+	const props = typeChecker.getPropertiesOfType(type);
+	// Seems to be a enum? Enums are fucking weird, this is bad
+	if ("types" in type) {
+		const types = type.types as ts.LiteralType[];
+
+		let result = `export enum ${name} {\n`;
+		types.forEach(type => result += `\t${type.symbol.escapedName} = "${type.value}",\n`);
+		result += "}";
+
+		entry.text = result;
+		return;
+	}
+
+	let result = `export interface ${name} {\n`;
+
+	props.forEach(prop => {
+		prop.declarations.forEach(decl => {
+			if (tsInstance.isPropertySignature(decl) && decl.type) {
+				const type = typeChecker.getTypeOfSymbolAtLocation(prop, decl);
+				if (type.isUnionOrIntersection()) maybeSaveUnionType(className, decl, tsInstance, typeChecker);
+				maybeSaveType(className, type, tsInstance, typeChecker);
+			}
+
+
+			result += `\t${decl.getFullText().trim()}\n`;
+		});
+	});
+
+	result += `}`;
+
+	entry.text = result;
+}
+
+function maybeSaveUnionType(className: string, decl: ts.PropertySignature, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	if (!tsInstance.isTypeReferenceNode(decl.type)) return;
+
+	const symbol = typeChecker.getSymbolAtLocation(decl.type.typeName);
+	symbol.declarations.forEach(subDecl => {
+		if (!tsInstance.isTypeAliasDeclaration(subDecl) || !tsInstance.isUnionTypeNode(subDecl.type)) return;
+		const name = subDecl.name.getText();
+		if (registeredExtraTypes.some(t => t.name == name && t.className == className)) return;
+		const entry: ServiceExtraType = { className, name, text: "" };
+		registeredExtraTypes.push(entry);
+
+		subDecl.type.types.forEach(type => {
+			if (tsInstance.isTypeReferenceNode(type)) {
+				maybeSaveTypeRefNode(className, type, tsInstance, typeChecker);
+			}
+		});
+		entry.text = `export ${subDecl.getFullText().trim()}`;
+	});
+}
+
+function handleServiceEventMethod(className: string, name: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
 	console.log(`${className}.${name} is service event`);
 
 	const args: ServiceArg[] = [];
 	node.parameters.forEach(child => {
+		if (tsInstance.isTypeReferenceNode(child.type)) maybeSaveTypeRefNode(className, child.type, tsInstance, typeChecker);
 		args.push({ text: child.getText(), name: child.name.getText() });
 	});
 
-	registeredEvents.push({
-		name,
-		className,
-		args
-	});
+	registeredEvents.push({ name, className, args });
 }
 
-function handleMethodDeclaration(node: ts.MethodDeclaration, tsInstance: typeof ts) {
+function handleMethodDeclaration(node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
 	if (!tsInstance.isClassDeclaration(node.parent)) return;
 	if (!node.parent.name) return;
 
@@ -85,13 +197,19 @@ function handleMethodDeclaration(node: ts.MethodDeclaration, tsInstance: typeof 
 		decorators.forEach(decorator => {
 			const decoratorName = decorator.getText();
 
-			if (decoratorName === serviceCallableDecorator) handleServiceCallableMethod(className, name, node);
-			else if (decoratorName === serviceEventDecorator) handleServiceEventMethod(className, name, node);
+			if (decoratorName === serviceCallableDecorator) handleServiceCallableMethod(className, name, node, tsInstance, typeChecker);
+			else if (decoratorName === serviceEventDecorator) handleServiceEventMethod(className, name, node, tsInstance, typeChecker);
 		});
 	}
 }
 
+let didWrite = false;
 function createServiceDefs() {
+	if (didWrite) {
+		console.log(`Double call to createServiceDefs`);
+		return;
+	}
+	didWrite = true;
 	if (!fs.existsSync(serviceDefsOutputDir)) {
 		fs.mkdirSync(serviceDefsOutputDir);
 	}
@@ -107,11 +225,12 @@ function createServiceDefs() {
 
 		const classMethods = registeredMethods.filter(method => method.className === className);
 		const classEvents = registeredEvents.filter(event => event.className === className);
-		createClassServiceDefs(path, className, classMethods, classEvents);
+		const classExtraTypes = registeredExtraTypes.filter(type => type.className === className);
+		createClassServiceDefs(path, className, classMethods, classEvents, classExtraTypes);
 	});
 }
 
-function createClassServiceDefs(path: string, className: string, methods: ServiceMethod[], events: ServiceEvent[]) {
+function createClassServiceDefs(path: string, className: string, methods: ServiceMethod[], events: ServiceEvent[], extraTypes: ServiceExtraType[]) {
 	let content = `import { ServiceHandler } from "${pathToServiceHandler}"\n\n`;
 	content += `class ${className} extends ServiceHandler {\n`;
 	content += `\tstatic serviceName = "${className}";\n\n`;
@@ -133,20 +252,30 @@ function createClassServiceDefs(path: string, className: string, methods: Servic
 	});
 
 	// Write out service event "on" handlers
-	let unionType = "";
-	events.forEach(event => {
-		content += `\tstatic on(event: "${event.name}", handler: (${event.args.map(a => a.text).join(", ")}) => void): void\n`;
-		if (unionType.length > 0) unionType += " | ";
-		unionType += `"${event.name}"`;
+	if (events.length > 0) {
+		let unionType = "";
+		events.forEach(event => {
+			content += `\tstatic on(event: "${event.name}", handler: (${event.args.map(a => a.text).join(", ")}) => void): void\n`;
+			if (unionType.length > 0) unionType += " | ";
+			unionType += `"${event.name}"`;
+		});
+		content += `\tstatic on<T extends ${unionType}>(event: T, handler: (...args: any[]) => void): void { this.registerEventHandler("${className}", event, handler); }\n`;
+	}
+	content += `}\n\n`;
+	// Write out extra types
+	extraTypes.forEach(type => {
+		content += `${type.text}\n\n`;
 	});
-	content += `\tstatic on<T extends ${unionType}>(event: T, handler: (...args: any[]) => void): void { this.registerEventHandler("${className}", event, handler); }\n`;
 
-	content += `}\n\nexport { ${className} }`;
+	content += `\n\nexport { ${className} }`;
 
 	fs.writeFileSync(path, content);
 }
 
+let ran: Set<string> = new Set();
+
 export default function (program: ts.Program, pluginConfig: PluginConfig, { ts: tsInstance }: TransformerExtras) {
+	const typeChecker = program.getTypeChecker();
 	return (ctx: ts.TransformationContext) => {
 		const { factory } = ctx;
 
@@ -156,7 +285,7 @@ export default function (program: ts.Program, pluginConfig: PluginConfig, { ts: 
 		return (sourceFile: ts.SourceFile) => {
 			function visit(node: ts.Node): ts.Node {
 				if (tsInstance.isMethodDeclaration(node)) {
-					handleMethodDeclaration(node, tsInstance);
+					handleMethodDeclaration(node, tsInstance, typeChecker);
 				}
 
 				return tsInstance.visitEachChild(node, visit, ctx);
@@ -164,7 +293,8 @@ export default function (program: ts.Program, pluginConfig: PluginConfig, { ts: 
 
 			const result = tsInstance.visitNode(sourceFile, visit);
 
-			if (sourceFile.fileName == files[files.length - 1]) {
+			ran.add(sourceFile.fileName);
+			if (files.every(f => ran.has(f))) {
 				console.log(`Reached last file, generating service defs`);
 				createServiceDefs();
 			}

@@ -37,6 +37,7 @@ class Client {
 
 		if (now - this.lastPongReceivedAt > TIMEOUT) {
 			console.log(`${this} timed out`);
+			this.app.logText(`timeout ${this.id}`);
 			this.close();
 			return;
 		}
@@ -83,6 +84,7 @@ class Client {
 	private handleSubscribeEvent(packet: SubscribeToEventPacket) {
 		console.log(`Client ${this} subscribed to ${packet.serviceIdentifier}.${packet.eventName}`);
 		this.subscribedEvents.push({ serviceIdentifier: packet.serviceIdentifier, event: packet.eventName });
+		this.app.logText(`subscribe ${this.id} <- ${packet.serviceIdentifier}.${packet.eventName}`);
 	}
 
 	private handleFireEvent(packet: FireEventPacket) {
@@ -97,9 +99,11 @@ class Client {
 		}
 		this.isAuthenticated = true;
 		console.log(`${this} authenticated`);
+		this.app.logText(`auth ${this.id}`);
 	}
 
 	private handleRegisterService(packet: RegisterServicePacket) {
+		this.app.logText(`register ${this.id} ${packet.serviceIdentifier}`);
 		console.log(`${this} registered service ${packet.serviceIdentifier}`);
 		this.registeredServices.push(packet.serviceIdentifier);
 		// Find pending calls
@@ -118,6 +122,7 @@ class Client {
 		this.isAlive = false;
 
 		console.log(`${this} closed`);
+		this.app.logText(`close ${this.id}`);
 	}
 
 	private handleClose() {
