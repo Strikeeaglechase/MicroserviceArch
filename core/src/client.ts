@@ -1,5 +1,5 @@
 import {
-	AuthPacket, FireEventPacket, Packet, PacketBuilder, RegisterServicePacket,
+	AuthPacket, FireEventPacket, Packet, PacketBuilder, PongPacket, RegisterServicePacket,
 	SubscribeToEventPacket
 } from "serviceLib/packets.js";
 import { v4 as uuidv4 } from "uuid";
@@ -61,24 +61,31 @@ class Client {
 	private handleMessage(message: string) {
 		try {
 			const packet: Packet = JSON.parse(message);
-			if (PacketBuilder.isPong(packet)) {
-				this.lastPongReceivedAt = Date.now();
-				this.waitingForPong = false;
-				this.lastLatency = this.lastPongReceivedAt - this.lastPingSentAt;
+			if (!PacketBuilder.isPong(packet) && !PacketBuilder.isAuth(packet) && !this.isAuthenticated) {
+				console.warn(`Client ${this} sent packet before authentication: ${message}`);
+				return;
 			}
 
-			if (PacketBuilder.isAuth(packet)) this.handleAuth(packet);
-			if (PacketBuilder.isRegisterService(packet)) this.handleRegisterService(packet);
-			if (PacketBuilder.isServiceCall(packet)) this.app.handleServiceCall(packet, this);
-			if (PacketBuilder.isServiceCallResponse(packet)) this.app.handleServiceReply(packet);
-			if (PacketBuilder.isSubscribeToEvent(packet)) this.handleSubscribeEvent(packet);
-			if (PacketBuilder.isFireEvent(packet)) this.handleFireEvent(packet);
+			if (PacketBuilder.isPong(packet)) this.handlePongPacket(packet);
+			else if (PacketBuilder.isAuth(packet)) this.handleAuth(packet);
+			else if (PacketBuilder.isRegisterService(packet)) this.handleRegisterService(packet);
+			else if (PacketBuilder.isServiceCall(packet) || PacketBuilder.isReadStreamStart(packet) || PacketBuilder.isWriteStreamStart(packet)) this.app.handleServiceMessage(packet, this);
+			else if (PacketBuilder.isServiceCallResponse(packet) || PacketBuilder.isStreamData(packet)) this.app.handleServiceReply(packet);
+			else if (PacketBuilder.isSubscribeToEvent(packet)) this.handleSubscribeEvent(packet);
+			else if (PacketBuilder.isFireEvent(packet)) this.handleFireEvent(packet);
+			else console.warn(`Client ${this} sent unknown packet: ${message}`);
 		} catch (err) {
 			console.error(`Error parsing client message: `);
 			console.error(err);
 			console.error(`Message: ${message}`);
 			return;
 		}
+	}
+
+	private handlePongPacket(packet: PongPacket) {
+		this.lastPongReceivedAt = Date.now();
+		this.waitingForPong = false;
+		this.lastLatency = this.lastPongReceivedAt - this.lastPingSentAt;
 	}
 
 	private handleSubscribeEvent(packet: SubscribeToEventPacket) {

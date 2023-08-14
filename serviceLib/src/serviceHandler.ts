@@ -1,6 +1,8 @@
 import { ServiceConnector } from "./serviceConnector.js";
 
 function Callable(target: any, propertyKey: string, descriptor: PropertyDescriptor) { }
+function ReadStream(target: any, propertyKey: string, descriptor: PropertyDescriptor) { }
+function WriteStream(target: any, propertyKey: string, descriptor: PropertyDescriptor) { }
 function Event(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
 	const orgMethod = descriptor.value;
 	descriptor.value = function (...args: any[]) {
@@ -38,6 +40,26 @@ class ServiceHandler {
 
 		connector.registerEventHandler(className, event, handler);
 	}
+
+	protected static execReadStreamCall(className: string, method: string, argsMap: Record<string, any>, args: any[]) {
+		const connector = ServiceConnector.instance;
+		if (!connector) {
+			console.error(`Service Handler not connected when calling ${className}.${method}`);
+			return;
+		}
+
+		return connector.execReadStreamCall(className, method, args);
+	}
+
+	protected static execWriteStreamCall(className: string, method: string, argsMap: Record<string, any>, args: any[]): any {
+		const connector = ServiceConnector.instance;
+		if (!connector) {
+			console.error(`Service Handler not connected when calling ${className}.${method}`);
+			return;
+		}
+
+		return connector.execWriteStreamCall(className, method, args);
+	}
 }
 
-export { ServiceHandler, Callable, Event };
+export { ServiceHandler, Callable, ReadStream, WriteStream, Event };

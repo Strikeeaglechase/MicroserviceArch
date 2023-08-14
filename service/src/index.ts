@@ -7,8 +7,3 @@ const service = new MyMicroservice();
 const connector = new ServiceConnector("ws://localhost:8000", "12348iaisdhu3");
 connector.connect();
 connector.register("MyMicroservice", service);
-
-let i = 0;
-setInterval(() => {
-	service.event(i++);
-}, 100);

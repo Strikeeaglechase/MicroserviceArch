@@ -37,17 +37,37 @@ interface RegisterServicePacket extends Packet {
 	serviceIdentifier: string;
 }
 
-interface ServiceCallPacket extends Packet {
-	type: "serviceCall";
+interface ServiceSpecificMethodCallBase extends Packet {
 	serviceIdentifier: string;
 	methodName: string;
 	arguments: any[];
 }
 
-interface ServiceCallResponsePacket extends Packet {
-	type: "serviceCallResponse";
+interface ServiceSpecificMethodCallReplyBase extends Packet {
 	orgPid: string;
+}
+
+interface ServiceCallPacket extends ServiceSpecificMethodCallBase {
+	type: "serviceCall";
+}
+
+interface ServiceCallResponsePacket extends ServiceSpecificMethodCallReplyBase {
+	type: "serviceCallResponse";
 	returnValue: any;
+}
+
+interface ReadStreamStartPacket extends ServiceSpecificMethodCallBase {
+	type: "readStreamStart";
+}
+
+interface WriteStreamStartPacket extends ServiceSpecificMethodCallBase {
+	type: "writeStreamStart";
+}
+
+interface StreamDataPacket extends ServiceSpecificMethodCallReplyBase {
+	type: "streamDataPacket";
+	data: any;
+	event: "data" | "end";
 }
 
 class PacketBuilder {
@@ -86,6 +106,15 @@ class PacketBuilder {
 
 	public static fireEvent(serviceIdentifier: string, eventName: string, args: any[]): FireEventPacket { return { serviceIdentifier, eventName, arguments: args, ...this.base("event") }; }
 	public static isFireEvent(packet: Packet): packet is FireEventPacket { return packet.type === "event"; }
+
+	public static readStreamStart(serviceIdentifier: string, methodName: string, args: any[]): ReadStreamStartPacket { return { serviceIdentifier, methodName, arguments: args, ...this.base("readStreamStart") }; }
+	public static isReadStreamStart(packet: Packet): packet is ReadStreamStartPacket { return packet.type === "readStreamStart"; }
+
+	public static writeStreamStart(serviceIdentifier: string, methodName: string, args: any[]): WriteStreamStartPacket { return { serviceIdentifier, methodName, arguments: args, ...this.base("writeStreamStart") }; }
+	public static isWriteStreamStart(packet: Packet): packet is WriteStreamStartPacket { return packet.type === "writeStreamStart"; }
+
+	public static streamDataPacket(orgPid: string, data: any, event: "data" | "end"): StreamDataPacket { return { orgPid, data, event, ...this.base("streamDataPacket") }; }
+	public static isStreamData(packet: Packet): packet is StreamDataPacket { return packet.type === "streamDataPacket"; }
 }
 
 export {
@@ -99,4 +128,9 @@ export {
 	ServiceCallResponsePacket,
 	FireEventPacket,
 	SubscribeToEventPacket,
+	ReadStreamStartPacket,
+	WriteStreamStartPacket,
+	StreamDataPacket,
+	ServiceSpecificMethodCallBase,
+	ServiceSpecificMethodCallReplyBase
 };

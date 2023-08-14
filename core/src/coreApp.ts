@@ -1,9 +1,10 @@
 import fs from "fs";
+import {
+	FireEventPacket, Packet, PacketBuilder, ServiceSpecificMethodCallBase,
+	ServiceSpecificMethodCallReplyBase
+} from "serviceLib/packets.js";
 import { WebSocket, WebSocketServer } from "ws";
 
-import {
-	FireEventPacket, Packet, ServiceCallPacket, ServiceCallResponsePacket
-} from "../../serviceLib/src/packets.js";
 import { Client } from "./client.js";
 
 const NETWORK_TICK_RATE = 1000 / 60; // 60 times per second
@@ -44,9 +45,12 @@ class Application {
 		this.clients.push(client);
 	}
 
-	public handleServiceCall(call: ServiceCallPacket, client: Client) {
+	public handleServiceMessage(call: ServiceSpecificMethodCallBase, client: Client) {
 		const serviceClient = this.getClientForService(call.serviceIdentifier);
 		this.serviceCallReplyMap[call.pid] = client;
+
+		// Ok this code is goofy. Write stream "replies" are really client->service calls, so we update the service
+		if (PacketBuilder.isWriteStreamStart(call)) this.serviceCallReplyMap[call.pid] = serviceClient;
 		this.logServiceCall(client, call);
 
 		if (!serviceClient) {
@@ -57,7 +61,7 @@ class Application {
 		}
 	}
 
-	public handleServiceReply(reply: ServiceCallResponsePacket) {
+	public handleServiceReply(reply: ServiceSpecificMethodCallReplyBase) {
 		const client = this.serviceCallReplyMap[reply.orgPid];
 		if (!client) {
 			console.warn(`No client is waiting for reply ${reply.orgPid}`);
@@ -66,7 +70,10 @@ class Application {
 		this.logServiceReply(reply);
 
 		client.send(reply);
-		delete this.serviceCallReplyMap[reply.orgPid];
+
+		// Not all packets should remove the reply. Streams should only remove if its end
+		if (PacketBuilder.isServiceCallResponse(reply)) delete this.serviceCallReplyMap[reply.orgPid];
+		if (PacketBuilder.isStreamData(reply) && reply.event == "end") delete this.serviceCallReplyMap[reply.orgPid];
 	}
 
 	public emitEventToSubscribedClients(event: FireEventPacket) {
@@ -91,13 +98,14 @@ class Application {
 		setTimeout(() => this.tick(), NETWORK_TICK_RATE);
 	}
 
-	private logServiceCall(callingClient: Client, call: ServiceCallPacket) {
+	private logServiceCall(callingClient: Client, call: ServiceSpecificMethodCallBase) {
 		const clientServices = "(" + callingClient.registeredServices.join(", ") + ")";
-		this.logText(`service_call ${call.pid} ${callingClient.id} ${clientServices} -> ${call.serviceIdentifier}.${call.methodName}  Args: ${JSON.stringify(call.arguments)}`);
+		this.logText(`service_call (${call.type}) ${call.pid} ${callingClient.id} ${clientServices} -> ${call.serviceIdentifier}.${call.methodName}  Args: ${JSON.stringify(call.arguments)}`);
 	}
 
-	private logServiceReply(reply: ServiceCallResponsePacket) {
-		this.logText(`service_reply ${reply.orgPid}  Reply: ${JSON.stringify(reply.returnValue)}`);
+	private logServiceReply(reply: ServiceSpecificMethodCallReplyBase) {
+		if ("returnValue" in reply) this.logText(`service_reply ${reply.orgPid} (${reply.type})  Reply: ${JSON.stringify(reply.returnValue)}`);
+		else this.logText(`service_reply ${reply.orgPid} (${reply.type})`);
 	}
 
 	private logEvent(event: FireEventPacket) {

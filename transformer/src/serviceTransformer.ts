@@ -5,6 +5,9 @@ import * as path from "path";
 
 const serviceCallableDecorator = `@Callable`;
 const serviceEventDecorator = `@Event`;
+const serviceReadStreamDecorator = `@ReadStream`;
+const serviceWriteStreamDecorator = `@WriteStream`;
+
 const libraryPath = locateLibrary();
 const serviceDefsOutputDir = `${libraryPath}/src/serviceDefs`;
 const pathToServiceHandler = `../serviceHandler.js`;
@@ -46,6 +49,8 @@ interface ServiceExtraType {
 }
 
 const registeredMethods: ServiceMethod[] = [];
+const registeredReadStreams: ServiceMethod[] = [];
+const registeredWriteStreams: ServiceMethod[] = [];
 const registeredEvents: ServiceEvent[] = [];
 const registeredExtraTypes: ServiceExtraType[] = [];
 
@@ -69,6 +74,49 @@ function handleServiceCallableMethod(className: string, name: string, node: ts.M
 		returnType
 	});
 }
+
+function handleServiceReadStream(className: string, name: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	// Ensure not already registered
+	if (registeredReadStreams.some(method => method.name == name && method.className == className)) return;
+	console.log(`${className}.${name} is service readstream`);
+
+	const args: ServiceArg[] = [];
+	// Slice 1 as first arg is the stream passed in by the library
+	node.parameters.slice(1).forEach(child => {
+		args.push({ text: child.getText(), name: child.name.getText() });
+	});
+
+	const returnType = "void";
+
+	registeredReadStreams.push({
+		name,
+		className,
+		args,
+		returnType
+	});
+}
+
+function handleServiceWriteStream(className: string, name: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	// Ensure not already registered
+	if (registeredReadStreams.some(method => method.name == name && method.className == className)) return;
+	console.log(`${className}.${name} is service readstream`);
+
+	const args: ServiceArg[] = [];
+	// Slice 1 as first arg is the stream passed in by the library
+	node.parameters.slice(1).forEach(child => {
+		args.push({ text: child.getText(), name: child.name.getText() });
+	});
+
+	const returnType = "void";
+
+	registeredWriteStreams.push({
+		name,
+		className,
+		args,
+		returnType
+	});
+}
+
 
 function processReturnType(className: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
 	if (!tsInstance.isTypeReferenceNode(node.type)) return node.type.getText();
@@ -199,6 +247,8 @@ function handleMethodDeclaration(node: ts.MethodDeclaration, tsInstance: typeof 
 
 			if (decoratorName === serviceCallableDecorator) handleServiceCallableMethod(className, name, node, tsInstance, typeChecker);
 			else if (decoratorName === serviceEventDecorator) handleServiceEventMethod(className, name, node, tsInstance, typeChecker);
+			else if (decoratorName === serviceReadStreamDecorator) handleServiceReadStream(className, name, node, tsInstance, typeChecker);
+			else if (decoratorName === serviceWriteStreamDecorator) handleServiceWriteStream(className, name, node, tsInstance, typeChecker);
 		});
 	}
 }
@@ -223,31 +273,54 @@ function createServiceDefs() {
 		const path = `${serviceDefsOutputDir}/${className}.ts`;
 		if (fs.existsSync(path)) fs.unlinkSync(path);
 
-		const classMethods = registeredMethods.filter(method => method.className === className);
-		const classEvents = registeredEvents.filter(event => event.className === className);
-		const classExtraTypes = registeredExtraTypes.filter(type => type.className === className);
-		createClassServiceDefs(path, className, classMethods, classEvents, classExtraTypes);
+		const filter = (obj: { className: string; }) => obj.className === className;
+		const classMethods = registeredMethods.filter(filter);
+		const classEvents = registeredEvents.filter(filter);
+		const classExtraTypes = registeredExtraTypes.filter(filter);
+		const classReadStreams = registeredReadStreams.filter(filter);
+		const classWriteStreams = registeredWriteStreams.filter(filter);
+
+		createClassServiceDefs(path, className, classMethods, classEvents, classExtraTypes, classReadStreams, classWriteStreams);
 	});
 }
 
-function createClassServiceDefs(path: string, className: string, methods: ServiceMethod[], events: ServiceEvent[], extraTypes: ServiceExtraType[]) {
-	let content = `import { ServiceHandler } from "${pathToServiceHandler}"\n\n`;
+function createClassServiceDefs(path: string, className: string, methods: ServiceMethod[], events: ServiceEvent[], extraTypes: ServiceExtraType[], readStreams: ServiceMethod[], writeStreams: ServiceMethod[]) {
+	let content = `import { ServiceHandler } from "${pathToServiceHandler}"\nimport { Readable } from "stream";\n\n`;
 	content += `class ${className} extends ServiceHandler {\n`;
 	content += `\tstatic serviceName = "${className}";\n\n`;
 
-	// Write out service callable methods
-	methods.forEach(method => {
-		let returnType = method.returnType;
-		if (!returnType.startsWith("Promise<")) returnType = `Promise<${returnType}>`;
+	const callables: { type: "method" | "read_stream" | "write_stream", method: ServiceMethod; }[] = [];
+	methods.forEach(method => callables.push({ type: "method", method }));
+	readStreams.forEach(method => callables.push({ type: "read_stream", method }));
+	writeStreams.forEach(method => callables.push({ type: "write_stream", method }));
 
-		content += `\tstatic ${method.name}(${method.args.map(a => a.text).join(", ")}): ${returnType} {\n`;
+	// Write out service callable methods
+	callables.forEach(callable => {
+		const method = callable.method;
+
+		let returnType = method.returnType;
+		if (callable.type == "method" && !returnType.startsWith("Promise<")) returnType = `Promise<${returnType}>`;
+		if (callable.type == "write_stream") returnType = ""; // Empty to allow inference
+		if (callable.type == "read_stream") returnType = ""; // Empty to allow inference
+		if (!returnType.startsWith(": ") && returnType.length > 0) returnType = ": " + returnType;
+
+		content += `\tstatic ${method.name}(${method.args.map(a => a.text).join(", ")})${returnType} {\n`;
 		content += `\t\tconst __argsMap = {};\n`;
 		content += `\t\tconst __args = [];\n`;
 		method.args.forEach(arg => {
 			content += `\t\t__argsMap["${arg.name}"] = ${arg.name};\n`;
 			content += `\t\t__args.push(${arg.name});\n`;
 		});
-		content += `\t\treturn this.execServiceCall("${className}", "${method.name}", __argsMap, __args);\n`;
+
+		let action = "";
+		switch (callable.type) {
+			case "method": action = "execServiceCall"; break;
+			case "read_stream": action = "execReadStreamCall"; break;
+			case "write_stream": action = "execWriteStreamCall"; break;
+		}
+
+		content += `\t\treturn this.${action}("${className}", "${method.name}", __argsMap, __args);\n`;
+
 		content += `\t}\n\n`;
 	});
 
@@ -262,6 +335,7 @@ function createClassServiceDefs(path: string, className: string, methods: Servic
 		content += `\tstatic on<T extends ${unionType}>(event: T, handler: (...args: any[]) => void): void { this.registerEventHandler("${className}", event, handler); }\n`;
 	}
 	content += `}\n\n`;
+
 	// Write out extra types
 	extraTypes.forEach(type => {
 		content += `${type.text}\n\n`;

@@ -1,4 +1,6 @@
-import { Callable, Event } from "serviceLib/serviceHandler.js";
+import fs from "fs";
+import { Callable, Event, ReadStream, WriteStream } from "serviceLib/serviceHandler.js";
+import { Readable, Writable } from "stream";
 
 class MyMicroservice {
 	@Callable
@@ -13,6 +15,18 @@ class MyMicroservice {
 
 	@Event
 	public otherEvent(str: string) { }
+
+	@ReadStream
+	public readFromService(stream: Writable, filename: string) {
+		const file = fs.createReadStream(filename);
+		file.pipe(stream);
+	}
+
+	@WriteStream
+	public writeToService(stream: Readable, filename: string) {
+		const file = fs.createWriteStream(filename);
+		stream.pipe(file);
+	}
 }
 
 export { MyMicroservice };
