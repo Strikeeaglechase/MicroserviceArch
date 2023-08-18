@@ -14,7 +14,6 @@ class ServiceConnector {
 	private replyHandlers: Record<string, (res: any) => void> = {};
 	private eventHandlers: Record<`${string}.${string}`, ((...args: any[]) => void)[]> = {};
 	private readStreamHandlers: Record<string, { stream: Readable, queue: Buffer[]; readyForNextData: boolean; }> = {};
-	private writeStreamHandlers: Record<string, { stream: Writable; }>;
 
 	public static instance: ServiceConnector;
 
@@ -34,17 +33,22 @@ class ServiceConnector {
 		const packet = PacketBuilder.readStreamStart(serviceIdentifier, method, args);
 		this.send(packet);
 
+		const handler = { queue: [], readyForNextData: false, stream: null };
 		const stream = new Stream.Readable({
 			read: async () => {
-				const data = this.readStreamHandlers[packet.pid].queue.shift();
-				if (data !== undefined) {
-					stream.push(data);
-				} else {
-					this.readStreamHandlers[packet.pid].readyForNextData = true;
+				if (!handler) {
+					console.error(`Service Handler received stream data for unregistered stream ${packet.pid}`);
+					return;
 				}
+
+				const data = handler.queue.shift();
+				if (data !== undefined) stream.push(data);
+				else handler.readyForNextData = true;
 			}
 		});
-		this.readStreamHandlers[packet.pid] = { stream, queue: [], readyForNextData: false };
+
+		handler.stream = stream;
+		this.readStreamHandlers[packet.pid] = handler;
 		return stream;
 	}
 
@@ -189,6 +193,11 @@ class ServiceConnector {
 		}
 
 		if (packet.event == "data") {
+			if (packet.data == null) {
+				console.log(`Null data for non-end packet`);
+				console.log(packet);
+			}
+
 			if (stream.readyForNextData) {
 				stream.readyForNextData = false;
 				stream.stream.push(Buffer.from(packet.data));
@@ -197,7 +206,7 @@ class ServiceConnector {
 			}
 		} else if (packet.event == "end") {
 			if (stream.readyForNextData) stream.stream.push(null);
-			else stream.queue.push(Buffer.from(packet.data));
+			else stream.queue.push(null);
 			delete this.readStreamHandlers[packet.orgPid];
 		}
 	}
@@ -244,6 +253,7 @@ class ServiceConnector {
 		}
 		catch (err) {
 			console.error(`Service Handler error: ${err}`);
+			console.error(err);
 		}
 	}
 

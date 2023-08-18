@@ -1,4 +1,5 @@
 import { ServiceHandler } from "../serviceHandler.js"
+import { Readable } from "stream";
 
 class DBService extends ServiceHandler {
 	static serviceName = "DBService";
@@ -91,6 +92,14 @@ class DBService extends ServiceHandler {
 		__argsMap["lobbyId"] = lobbyId;
 		__args.push(lobbyId);
 		return this.execServiceCall("DBService", "deleteRecordedLobbyPackets", __argsMap, __args);
+	}
+
+	static getLobbyPacketStream(lobbyId: string) {
+		const __argsMap = {};
+		const __args = [];
+		__argsMap["lobbyId"] = lobbyId;
+		__args.push(lobbyId);
+		return this.execReadStreamCall("DBService", "getLobbyPacketStream", __argsMap, __args);
 	}
 
 }

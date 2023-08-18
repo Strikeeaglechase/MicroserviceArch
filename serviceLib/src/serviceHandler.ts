@@ -51,7 +51,7 @@ class ServiceHandler {
 		return connector.execReadStreamCall(className, method, args);
 	}
 
-	protected static execWriteStreamCall(className: string, method: string, argsMap: Record<string, any>, args: any[]): any {
+	protected static execWriteStreamCall(className: string, method: string, argsMap: Record<string, any>, args: any[]) {
 		const connector = ServiceConnector.instance;
 		if (!connector) {
 			console.error(`Service Handler not connected when calling ${className}.${method}`);

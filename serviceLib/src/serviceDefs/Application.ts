@@ -1,4 +1,5 @@
 import { ServiceHandler } from "../serviceHandler.js"
+import { Readable } from "stream";
 
 class Application extends ServiceHandler {
 	static serviceName = "Application";

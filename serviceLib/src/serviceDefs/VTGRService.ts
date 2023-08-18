@@ -1,4 +1,5 @@
 import { ServiceHandler } from "../serviceHandler.js"
+import { Readable } from "stream";
 
 class VTGRService extends ServiceHandler {
 	static serviceName = "VTGRService";
@@ -11,30 +12,12 @@ class VTGRService extends ServiceHandler {
 		return this.execServiceCall("VTGRService", "dumpGameToFile", __argsMap, __args);
 	}
 
-	static loadRecording(id: string): Promise<void> {
+	static readRecordingBody(replayId: string) {
 		const __argsMap = {};
 		const __args = [];
-		__argsMap["id"] = id;
-		__args.push(id);
-		return this.execServiceCall("VTGRService", "loadRecording", __argsMap, __args);
-	}
-
-	static readChunk(id: string, chunkId: number): Promise<string> {
-		const __argsMap = {};
-		const __args = [];
-		__argsMap["id"] = id;
-		__args.push(id);
-		__argsMap["chunkId"] = chunkId;
-		__args.push(chunkId);
-		return this.execServiceCall("VTGRService", "readChunk", __argsMap, __args);
-	}
-
-	static unloadRecording(id: string): Promise<void> {
-		const __argsMap = {};
-		const __args = [];
-		__argsMap["id"] = id;
-		__args.push(id);
-		return this.execServiceCall("VTGRService", "unloadRecording", __argsMap, __args);
+		__argsMap["replayId"] = replayId;
+		__args.push(replayId);
+		return this.execReadStreamCall("VTGRService", "readRecordingBody", __argsMap, __args);
 	}
 
 }
