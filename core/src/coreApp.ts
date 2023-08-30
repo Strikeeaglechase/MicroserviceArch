@@ -8,6 +8,14 @@ import { WebSocket, WebSocketServer } from "ws";
 import { Client } from "./client.js";
 
 const NETWORK_TICK_RATE = 1000 / 60; // 60 times per second
+const MAX_LOG_LINE_LENGTH = 1024 * 2;
+interface LogIgnore {
+	serviceIdentifier: string;
+	methodName: string;
+}
+const logIgnoreConfig = JSON.parse(process.env.LOG_IGNORE || "[]") as LogIgnore[];
+const logIgnore: Set<string> = new Set();
+logIgnoreConfig.forEach(i => logIgnore.add(`${i.serviceIdentifier}.${i.methodName}`));
 
 class Application {
 	private server: WebSocketServer;
@@ -20,6 +28,7 @@ class Application {
 	constructor(private port: number, public serviceAuthKey: string) {
 		this.masterLog = fs.createWriteStream("../master.log", { flags: "a" });
 		this.logText(`Startup`);
+		this.logText(`Configured to ignore logs: ${[...logIgnoreConfig].join(", ")}`);
 	}
 
 	public init() {
@@ -99,6 +108,8 @@ class Application {
 	}
 
 	private logServiceCall(callingClient: Client, call: ServiceSpecificMethodCallBase) {
+		if (logIgnore.has(`${call.serviceIdentifier}.${call.methodName}`)) return;
+
 		const clientServices = "(" + callingClient.registeredServices.join(", ") + ")";
 		this.logText(`service_call (${call.type}) ${call.pid} ${callingClient.id} ${clientServices} -> ${call.serviceIdentifier}.${call.methodName}  Args: ${JSON.stringify(call.arguments)}`);
 	}
@@ -109,15 +120,23 @@ class Application {
 	}
 
 	private logEvent(event: FireEventPacket) {
+		if (logIgnore.has(`${event.serviceIdentifier}.${event.eventName}`)) return;
+
 		this.logText(`event ${event.pid} ${event.serviceIdentifier}.${event.eventName}  Args: ${JSON.stringify(event.arguments)}`);
 	}
 
 	private logEventSentToClient(event: FireEventPacket, client: Client) {
+		if (logIgnore.has(`${event.serviceIdentifier}.${event.eventName}`)) return;
+
 		const clientServices = "(" + client.registeredServices.join(", ") + ")";
 		this.logText(`event_sent ${event.pid} -> ${client.id}  ${event.serviceIdentifier}.${event.eventName} -> ${clientServices}`);
 	}
 
 	public logText(text: string) {
+		if (text.length > MAX_LOG_LINE_LENGTH) {
+			text = text.substring(0, MAX_LOG_LINE_LENGTH) + `... (${text.length - MAX_LOG_LINE_LENGTH} more chars)`;
+		}
+
 		this.masterLog.write(`[${new Date().toISOString()}] ${text}\n`);
 	}
 }
