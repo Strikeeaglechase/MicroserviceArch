@@ -226,6 +226,11 @@ class ServiceConnector {
 
 		const stream = new Stream.Readable({
 			read: async () => {
+				if (!this.readStreamHandlers[packet.pid]) {
+					console.log(`Read() called despite handler already being deleted for ${packet.pid}`);
+					return;
+				}
+
 				const data = this.readStreamHandlers[packet.pid].queue.shift();
 				if (data !== undefined) {
 					stream.push(data);
