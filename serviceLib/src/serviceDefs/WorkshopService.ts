@@ -20,12 +20,6 @@ export interface T {
 }
 
 export interface MissionInfo {
-	name: string;
-	id: string;
-	campaignId: string;
-	workshopId: string;
-	mapId: string;
-	isBuiltin: boolean;
 	spawns: {
         name: string;
         id: number;
@@ -34,6 +28,12 @@ export interface MissionInfo {
         name: string;
         id: number;
     }[];
+	name: string;
+	id: string;
+	campaignId: string;
+	workshopId: string;
+	mapId: string;
+	isBuiltin: boolean;
 }
 
 export interface __type {
