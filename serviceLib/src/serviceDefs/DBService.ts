@@ -86,6 +86,14 @@ class DBService extends ServiceHandler {
 		return this.execServiceCall("DBService", "addStoredLobbyHeader", __argsMap, __args);
 	}
 
+	static updateRecordedLobbyMetadata(metadata: VTGRMetadata): Promise<void> {
+		const __argsMap = {};
+		const __args = [];
+		__argsMap["metadata"] = metadata;
+		__args.push(metadata);
+		return this.execServiceCall("DBService", "updateRecordedLobbyMetadata", __argsMap, __args);
+	}
+
 	static deleteRecordedLobbyPackets(lobbyId: string): Promise<void> {
 		const __argsMap = {};
 		const __args = [];
@@ -111,6 +119,7 @@ export interface VTGRHeader {
 	info: RecordedLobbyInfo;
 	id: string;
 	chunks: VTGRDataChunk[];
+	metadata?: VTGRMetadata;
 }
 
 export interface RecordedLobbyInfo {
@@ -120,7 +129,7 @@ export interface RecordedLobbyInfo {
 	missionId: string;
 	missionInfo: MissionInfo;
 	campaignId: string;
-	type: string;
+	workshopId: string;
 	map: string;
 	recordingId: string;
 	duration: number;
@@ -152,6 +161,16 @@ export interface __type {
 export interface VTGRDataChunk {
 	start: number;
 	length: number;
+}
+
+export interface VTGRMetadata {
+	id: string;
+	players: {
+        name: string;
+        id: string;
+    }[];
+	netInstantiates: number;
+	totalPackets: number;
 }
 
 export interface DbUserEntry {
