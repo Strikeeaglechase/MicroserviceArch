@@ -119,7 +119,6 @@ export interface VTGRHeader {
 	info: RecordedLobbyInfo;
 	id: string;
 	chunks: VTGRDataChunk[];
-	metadata?: VTGRMetadata;
 }
 
 export interface RecordedLobbyInfo {
@@ -134,6 +133,7 @@ export interface RecordedLobbyInfo {
 	recordingId: string;
 	duration: number;
 	startTime: number;
+	metadata?: VTGRMetadata;
 }
 
 export interface MissionInfo {
@@ -158,11 +158,6 @@ export interface __type {
 	id: number;
 }
 
-export interface VTGRDataChunk {
-	start: number;
-	length: number;
-}
-
 export interface VTGRMetadata {
 	id: string;
 	players: {
@@ -171,6 +166,11 @@ export interface VTGRMetadata {
     }[];
 	netInstantiates: number;
 	totalPackets: number;
+}
+
+export interface VTGRDataChunk {
+	start: number;
+	length: number;
 }
 
 export interface DbUserEntry {
