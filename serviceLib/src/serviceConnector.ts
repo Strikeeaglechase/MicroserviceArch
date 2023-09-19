@@ -2,8 +2,14 @@ import { Readable, Stream, Writable } from "stream";
 import { WebSocket } from "ws";
 
 import {
-	FireEventPacket, Packet, PacketBuilder, ReadStreamStartPacket, ServiceCallPacket,
-	ServiceCallResponsePacket, StreamDataPacket, WriteStreamStartPacket
+	FireEventPacket,
+	Packet,
+	PacketBuilder,
+	ReadStreamStartPacket,
+	ServiceCallPacket,
+	ServiceCallResponsePacket,
+	StreamDataPacket,
+	WriteStreamStartPacket
 } from "./packets.js";
 
 class ServiceConnector {
@@ -13,7 +19,7 @@ class ServiceConnector {
 	private registeredServices: Record<string, object> = {};
 	private replyHandlers: Record<string, (res: any) => void> = {};
 	private eventHandlers: Record<`${string}.${string}`, ((...args: any[]) => void)[]> = {};
-	private readStreamHandlers: Record<string, { stream: Readable, queue: Buffer[]; readyForNextData: boolean; }> = {};
+	private readStreamHandlers: Record<string, { stream: Readable; queue: Buffer[]; readyForNextData: boolean }> = {};
 
 	public static instance: ServiceConnector;
 
@@ -103,14 +109,14 @@ class ServiceConnector {
 	}
 
 	public connect() {
-		return new Promise<void>((res) => {
+		return new Promise<void>(res => {
 			this.socket = new WebSocket(this.url);
 			this.socket.onopen = () => {
 				this.handleOpen();
 				res();
 			};
-			this.socket.onmessage = (event) => this.handleMessage(event.data.toString());
-			this.socket.onerror = (err) => console.error(`Service Handler socket error: ${err.message}`);
+			this.socket.onmessage = event => this.handleMessage(event.data.toString());
+			this.socket.onerror = err => console.error(`Service Handler socket error: ${err.message}`);
 			this.socket.onclose = () => {
 				console.log(`Service Handler socket closed`);
 				this.connected = false;
@@ -125,12 +131,12 @@ class ServiceConnector {
 
 		this.send(PacketBuilder.auth(this.authKey));
 
-		Object.keys(this.registeredServices).forEach((serviceIdentifier) => {
+		Object.keys(this.registeredServices).forEach(serviceIdentifier => {
 			this.send(PacketBuilder.registerService(serviceIdentifier));
 			console.log(`Service Handler registered service ${serviceIdentifier}`);
 		});
 
-		Object.keys(this.eventHandlers).forEach((event) => {
+		Object.keys(this.eventHandlers).forEach(event => {
 			const [serviceIdentifier, eventName] = event.split(".");
 			this.send(PacketBuilder.subscribeToEvent(serviceIdentifier, eventName));
 			console.log(`Service Handler subscribed to event ${serviceIdentifier}.${event}`);
@@ -205,9 +211,10 @@ class ServiceConnector {
 				stream.queue.push(Buffer.from(packet.data));
 			}
 		} else if (packet.event == "end") {
-			if (stream.readyForNextData) stream.stream.push(null);
-			else stream.queue.push(null);
-			delete this.readStreamHandlers[packet.orgPid];
+			if (stream.readyForNextData) {
+				stream.stream.push(null);
+				delete this.readStreamHandlers[packet.orgPid];
+			} else stream.queue.push(null);
 		}
 	}
 
@@ -232,6 +239,12 @@ class ServiceConnector {
 				}
 
 				const data = this.readStreamHandlers[packet.pid].queue.shift();
+				if (data === null) {
+					stream.push(null);
+					delete this.readStreamHandlers[packet.pid];
+					return;
+				}
+
 				if (data !== undefined) {
 					stream.push(data);
 				} else {
@@ -255,8 +268,7 @@ class ServiceConnector {
 			if (PacketBuilder.isReadStreamStart(packet)) this.handleReadStreamStart(packet);
 			if (PacketBuilder.isWriteStreamStart(packet)) this.handleWriteStreamStart(packet);
 			if (PacketBuilder.isStreamData(packet)) this.handleStreamData(packet);
-		}
-		catch (err) {
+		} catch (err) {
 			console.error(`Service Handler error: ${err}`);
 			console.error(err);
 		}
