@@ -28,6 +28,12 @@ export interface MissionInfo {
         name: string;
         id: number;
     }[];
+	waypoints: {
+        name: string;
+        id: number;
+        position: Vector3;
+    }[];
+	bullseye: Record<Team, number>;
 	name: string;
 	id: string;
 	campaignId: string;

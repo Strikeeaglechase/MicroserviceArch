@@ -1,8 +1,5 @@
 import fs from "fs";
-import {
-	FireEventPacket, Packet, PacketBuilder, ServiceSpecificMethodCallBase,
-	ServiceSpecificMethodCallReplyBase
-} from "serviceLib/packets.js";
+import { FireEventPacket, Packet, PacketBuilder, ServiceSpecificMethodCallBase, ServiceSpecificMethodCallReplyBase } from "serviceLib/packets.js";
 import { WebSocket, WebSocketServer } from "ws";
 
 import { Client } from "./client.js";
@@ -36,8 +33,8 @@ class Application {
 
 		this.server = new WebSocketServer({ port: this.port });
 
-		this.server.on("connection", (conn) => this.handleConnection(conn));
-		this.server.on("error", (err) => {
+		this.server.on("connection", conn => this.handleConnection(conn));
+		this.server.on("error", err => {
 			console.error(`Error on CoreApp websocket server: `);
 			console.error(err);
 		});
@@ -101,8 +98,8 @@ class Application {
 	}
 
 	public tick() {
-		this.clients.forEach((client) => client.update());
-		this.clients = this.clients.filter((client) => client.isAlive);
+		this.clients.forEach(client => client.update());
+		this.clients = this.clients.filter(client => client.isAlive);
 
 		setTimeout(() => this.tick(), NETWORK_TICK_RATE);
 	}
@@ -111,7 +108,11 @@ class Application {
 		if (logIgnore.has(`${call.serviceIdentifier}.${call.methodName}`)) return;
 
 		const clientServices = "(" + callingClient.registeredServices.join(", ") + ")";
-		this.logText(`service_call (${call.type}) ${call.pid} ${callingClient.id} ${clientServices} -> ${call.serviceIdentifier}.${call.methodName}  Args: ${JSON.stringify(call.arguments)}`);
+		this.logText(
+			`service_call (${call.type}) ${call.pid} ${callingClient.id} ${clientServices} -> ${call.serviceIdentifier}.${call.methodName}  Args: ${JSON.stringify(
+				call.arguments
+			)}`
+		);
 	}
 
 	private logServiceReply(reply: ServiceSpecificMethodCallReplyBase) {

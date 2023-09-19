@@ -1,7 +1,4 @@
-import {
-	AuthPacket, FireEventPacket, Packet, PacketBuilder, PongPacket, RegisterServicePacket,
-	SubscribeToEventPacket
-} from "serviceLib/packets.js";
+import { AuthPacket, FireEventPacket, Packet, PacketBuilder, PongPacket, RegisterServicePacket, SubscribeToEventPacket } from "serviceLib/packets.js";
 import { v4 as uuidv4 } from "uuid";
 import { WebSocket } from "ws";
 
@@ -9,6 +6,8 @@ import { Application } from "./coreApp.js";
 
 const PING_RATE = 1000;
 const TIMEOUT = 15000;
+const MAX_PACKETS_PER_MESSAGE = 100;
+const USE_BUFFERED_SEND = false;
 
 class Client {
 	public isAlive = true;
@@ -23,13 +22,15 @@ class Client {
 	public registeredServices: string[] = [];
 	public isAuthenticated = false;
 
-	public subscribedEvents: { serviceIdentifier: string, event: string; }[] = [];
+	public subscribedEvents: { serviceIdentifier: string; event: string }[] = [];
+
+	private sendBuffer: Packet[] = [];
 
 	constructor(private socket: WebSocket, private app: Application) {
 		this.id = uuidv4();
-		socket.onmessage = (event) => this.handleMessage(event.data.toString());
+		socket.onmessage = event => this.handleMessage(event.data.toString());
 		socket.onclose = () => this.handleClose();
-		socket.onerror = (err) => console.error(`Client socket error: ${err}`);
+		socket.onerror = err => console.error(`Client socket error: ${err}`);
 	}
 
 	public update() {
@@ -40,6 +41,14 @@ class Client {
 			this.app.logText(`timeout ${this.id}`);
 			this.close();
 			return;
+		}
+
+		if (this.sendBuffer.length > 0) {
+			for (let i = 0; i < this.sendBuffer.length; i += MAX_PACKETS_PER_MESSAGE) {
+				const blob = JSON.stringify(this.sendBuffer.slice(i, i + MAX_PACKETS_PER_MESSAGE));
+				this.socket.send(blob);
+			}
+			this.sendBuffer = [];
 		}
 
 		if (now - this.lastPingSentAt > PING_RATE && !this.waitingForPong) {
@@ -54,32 +63,42 @@ class Client {
 	}
 
 	public send(packet: Packet) {
-		const json = JSON.stringify(packet);
-		this.socket.send(json);
+		if (USE_BUFFERED_SEND) this.sendBuffer.push(packet);
+		else {
+			const json = JSON.stringify(packet);
+			this.socket.send(json);
+		}
 	}
 
 	private handleMessage(message: string) {
 		try {
-			const packet: Packet = JSON.parse(message);
-			if (!PacketBuilder.isPong(packet) && !PacketBuilder.isAuth(packet) && !this.isAuthenticated) {
-				console.warn(`Client ${this} sent packet before authentication: ${message}`);
-				return;
-			}
-
-			if (PacketBuilder.isPong(packet)) this.handlePongPacket(packet);
-			else if (PacketBuilder.isAuth(packet)) this.handleAuth(packet);
-			else if (PacketBuilder.isRegisterService(packet)) this.handleRegisterService(packet);
-			else if (PacketBuilder.isServiceCall(packet) || PacketBuilder.isReadStreamStart(packet) || PacketBuilder.isWriteStreamStart(packet)) this.app.handleServiceMessage(packet, this);
-			else if (PacketBuilder.isServiceCallResponse(packet) || PacketBuilder.isStreamData(packet)) this.app.handleServiceReply(packet);
-			else if (PacketBuilder.isSubscribeToEvent(packet)) this.handleSubscribeEvent(packet);
-			else if (PacketBuilder.isFireEvent(packet)) this.handleFireEvent(packet);
-			else console.warn(`Client ${this} sent unknown packet: ${message}`);
+			// console.log(`${this}: ${message.length}`);
+			const packet: Packet | Packet[] = JSON.parse(message);
+			if (Array.isArray(packet)) packet.forEach(p => this.handlePacket(p, message));
+			else this.handlePacket(packet, message);
 		} catch (err) {
 			console.error(`Error parsing client message: `);
 			console.error(err);
 			console.error(`Message: ${message}`);
 			return;
 		}
+	}
+
+	private handlePacket(packet: Packet, message: string) {
+		if (!PacketBuilder.isPong(packet) && !PacketBuilder.isAuth(packet) && !this.isAuthenticated) {
+			console.warn(`Client ${this} sent packet before authentication: ${message}`);
+			return;
+		}
+
+		if (PacketBuilder.isPong(packet)) this.handlePongPacket(packet);
+		else if (PacketBuilder.isAuth(packet)) this.handleAuth(packet);
+		else if (PacketBuilder.isRegisterService(packet)) this.handleRegisterService(packet);
+		else if (PacketBuilder.isServiceCall(packet) || PacketBuilder.isReadStreamStart(packet) || PacketBuilder.isWriteStreamStart(packet))
+			this.app.handleServiceMessage(packet, this);
+		else if (PacketBuilder.isServiceCallResponse(packet) || PacketBuilder.isStreamData(packet)) this.app.handleServiceReply(packet);
+		else if (PacketBuilder.isSubscribeToEvent(packet)) this.handleSubscribeEvent(packet);
+		else if (PacketBuilder.isFireEvent(packet)) this.handleFireEvent(packet);
+		else console.warn(`Client ${this} sent unknown packet: ${message}`);
 	}
 
 	private handlePongPacket(packet: PongPacket) {
@@ -119,9 +138,8 @@ class Client {
 		console.log(`Found ${pending.length} pending calls for ${packet.serviceIdentifier}`);
 
 		// Send pending calls
-		pending.forEach((call) => this.send(call));
+		pending.forEach(call => this.send(call));
 		delete this.app.serviceCallStore[packet.serviceIdentifier];
-
 	}
 
 	public close() {

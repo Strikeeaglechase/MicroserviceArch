@@ -12,6 +12,10 @@ import {
 	WriteStreamStartPacket
 } from "./packets.js";
 
+const SEND_RATE = 1000 / 60;
+const MAX_PACKETS_PER_MESSAGE = 100;
+const USE_BUFFERED_SEND = false;
+
 class ServiceConnector {
 	private socket: WebSocket;
 	public connected = false;
@@ -23,8 +27,12 @@ class ServiceConnector {
 
 	public static instance: ServiceConnector;
 
+	private sendBuffer: Packet[] = [];
+
 	constructor(private url: string, private authKey: string) {
 		ServiceConnector.instance = this;
+
+		setInterval(() => this.sendLoop(), SEND_RATE);
 	}
 
 	public execServiceCall(serviceIdentifier: string, method: string, args: any[]) {
@@ -260,28 +268,48 @@ class ServiceConnector {
 
 	private handleMessage(message: string) {
 		try {
-			const packet: Packet = JSON.parse(message);
-			if (PacketBuilder.isPing(packet)) this.send(PacketBuilder.pong());
-			if (PacketBuilder.isServiceCall(packet)) this.handleServiceCall(packet);
-			if (PacketBuilder.isServiceCallResponse(packet)) this.handleReply(packet);
-			if (PacketBuilder.isFireEvent(packet)) this.handleFiredEvent(packet);
-			if (PacketBuilder.isReadStreamStart(packet)) this.handleReadStreamStart(packet);
-			if (PacketBuilder.isWriteStreamStart(packet)) this.handleWriteStreamStart(packet);
-			if (PacketBuilder.isStreamData(packet)) this.handleStreamData(packet);
+			const packet: Packet | Packet[] = JSON.parse(message);
+			if (Array.isArray(packet)) packet.forEach(p => this.handlePacket(p));
+			else this.handlePacket(packet);
 		} catch (err) {
 			console.error(`Service Handler error: ${err}`);
 			console.error(err);
 		}
 	}
 
-	public send(packet: Packet) {
-		if (!this.connected) {
-			console.error(`Service Handler not connected`);
-			return;
-		}
+	private handlePacket(packet: Packet) {
+		if (PacketBuilder.isPing(packet)) this.send(PacketBuilder.pong());
+		if (PacketBuilder.isServiceCall(packet)) this.handleServiceCall(packet);
+		if (PacketBuilder.isServiceCallResponse(packet)) this.handleReply(packet);
+		if (PacketBuilder.isFireEvent(packet)) this.handleFiredEvent(packet);
+		if (PacketBuilder.isReadStreamStart(packet)) this.handleReadStreamStart(packet);
+		if (PacketBuilder.isWriteStreamStart(packet)) this.handleWriteStreamStart(packet);
+		if (PacketBuilder.isStreamData(packet)) this.handleStreamData(packet);
+	}
 
-		const json = JSON.stringify(packet);
-		this.socket.send(json);
+	private async sendLoop() {
+		if (!this.connected) return;
+
+		if (this.sendBuffer.length > 0) {
+			for (let i = 0; i < this.sendBuffer.length; i += MAX_PACKETS_PER_MESSAGE) {
+				const blob = JSON.stringify(this.sendBuffer.slice(i, i + MAX_PACKETS_PER_MESSAGE));
+				this.socket.send(blob);
+			}
+			this.sendBuffer = [];
+		}
+	}
+
+	public send(packet: Packet) {
+		if (USE_BUFFERED_SEND) this.sendBuffer.push(packet);
+		else {
+			if (!this.connected) {
+				console.error(`Service Handler not connected`);
+				return;
+			}
+
+			const json = JSON.stringify(packet);
+			this.socket.send(json);
+		}
 	}
 
 	public register(serviceIdentifier: string, service: object) {
