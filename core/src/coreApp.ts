@@ -173,9 +173,9 @@ class Application {
 		const key = replyTarget.rpcIdentifier;
 
 		if (PacketBuilder.isServiceCallResponse(reply)) {
-			this.serviceCallCounts[key].data += JSON.stringify(reply.returnValue).length;
+			this.serviceCallCounts[key].data += JSON.stringify(reply.returnValue)?.length ?? 0;
 		} else if (PacketBuilder.isStreamData(reply)) {
-			this.serviceCallCounts[key].data += JSON.stringify(reply.data).length;
+			this.serviceCallCounts[key].data += JSON.stringify(reply.data)?.length ?? 0;
 		}
 	}
 
