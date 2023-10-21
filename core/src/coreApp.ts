@@ -171,7 +171,7 @@ class Application {
 	private trackReplyData(reply: ServiceSpecificMethodCallReplyBase) {
 		const replyTarget = this.serviceCallReplyMap[reply.orgPid];
 		const key = replyTarget.rpcIdentifier;
-
+		if (!this.serviceCallCounts[key]) return; // Bug?
 		if (PacketBuilder.isServiceCallResponse(reply)) {
 			this.serviceCallCounts[key].data += JSON.stringify(reply.returnValue)?.length ?? 0;
 		} else if (PacketBuilder.isStreamData(reply)) {
