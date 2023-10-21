@@ -164,6 +164,8 @@ class Application {
 	private trackServiceCallReply(reply: ServiceSpecificMethodCallReplyBase) {
 		const replyTarget = this.serviceCallReplyMap[reply.orgPid];
 		const key = replyTarget.rpcIdentifier;
+
+		if (!this.serviceCallCounts[key]) return; // Bug?
 		this.serviceCallCounts[key].totalPing += Date.now() - replyTarget.startAt;
 		this.serviceCallCounts[key].count++;
 	}
