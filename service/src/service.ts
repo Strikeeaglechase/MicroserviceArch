@@ -6,15 +6,15 @@ class MyMicroservice {
 	@Callable
 	private callableMethod(arg: string, ...rest: any[]): number {
 		console.log(`CallableMethod executed with arg: ${arg}`);
+		this.otherEvent(arg);
 		return 42;
 	}
 
+	@Event
+	public event(num: number) {}
 
 	@Event
-	public event(num: number) { }
-
-	@Event
-	public otherEvent(str: string) { }
+	public otherEvent(str: string) {}
 
 	@ReadStream
 	public readFromService(stream: Writable, filename: string) {

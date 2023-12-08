@@ -1,0 +1,22 @@
+{
+	"compilerOptions": {
+		"emitDecoratorMetadata": true,
+		"experimentalDecorators": true,
+		"target": "ES6",
+		"moduleResolution": "node",
+		"module": "esnext",
+		"allowSyntheticDefaultImports": true,
+		"outDir": "dist/",
+		"baseUrl": "./src",
+		"lib": ["ES2019"],
+		"paths": {
+			"serviceLib/*": ["../../serviceLib/dist/src/*"],
+		},
+		"plugins": [
+			{ "transform": "typescript-transform-paths"},
+			{ "transform": "typescript-transform-paths", "afterDeclarations": true }
+		]
+	},
+	"include": ["src/"],
+	// "references": [{ "path": "../serviceLib" }]
+}
