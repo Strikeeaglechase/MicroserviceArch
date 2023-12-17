@@ -46,6 +46,7 @@ class ServiceConnector {
 
 	constructor(private coreUrl: string, public authKey: string, private externalIp = "127.0.0.1", private serverPort = -1) {
 		ServiceConnector.instance = this;
+		this.tick();
 	}
 
 	public execServiceCall(serviceIdentifier: string, method: string, args: any[]) {
@@ -131,7 +132,6 @@ class ServiceConnector {
 	}
 
 	public connect() {
-		this.tick();
 		return new Promise<void>(res => {
 			this.coreSocket = new WebSocket(this.coreUrl);
 			this.coreSocket.onopen = () => {
@@ -139,7 +139,7 @@ class ServiceConnector {
 				res();
 			};
 			this.coreSocket.onmessage = event => this.handleCoreMessage(event.data.toString());
-			this.coreSocket.onerror = err => console.error(`Service Handler socket error: ${err.message}`);
+			this.coreSocket.onerror = err => console.error(`Service Handler CORE socket error: ${err.message}`);
 			this.coreSocket.onclose = () => {
 				console.log(`Service Handler socket closed`);
 				this.connectedToCore = false;
@@ -416,7 +416,8 @@ class ServiceConnector {
 			conn.queue = [];
 		};
 		conn.socket.onmessage = event => this.handleServiceMessage(event.data.toString(), conn);
-		conn.socket.onerror = err => console.error(`Service Handler socket error: ${err.message}`);
+		conn.socket.onerror = err =>
+			console.error(`Service Handler socket error. URL: ${proto}${packet.ip}:${packet.port}, Service: ${packet.serviceIdentifier}, Err: ${err.message}`);
 		conn.socket.onclose = () => {
 			console.log(`Service Handler socket closed`);
 			conn.socket = null;
