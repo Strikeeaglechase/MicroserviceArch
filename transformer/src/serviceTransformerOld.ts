@@ -11,16 +11,7 @@ const serviceWriteStreamDecorator = `@WriteStream`;
 const libraryPath = locateLibrary();
 const serviceDefsOutputDir = `${libraryPath}/src/serviceDefs`;
 const pathToServiceHandler = `../serviceHandler.js`;
-const sharedTypeIdents: { ident: string; path: string }[] = [
-	{
-		ident: `shared`,
-		path: `../../../../VTOLLiveViewerCommon/dist/src/shared.js`
-	},
-	{
-		ident: `rpc.js`,
-		path: `../../../../VTOLLiveViewerCommon/dist/src/rpc.js`
-	}
-];
+const sharedTypePath = `../../sharedTypes/dist/src/index.js`;
 
 function locateLibrary() {
 	let pathToCheck = `.`;
@@ -52,27 +43,22 @@ interface ServiceEvent {
 	args: ServiceArg[];
 }
 
-interface FileImports {
-	filename: string;
-	imports: { clause: string; module: string }[];
-}
-
-interface ClassInfo {
+interface ServiceExtraType {
+	className: string;
 	name: string;
-	filename: string;
+	text: string;
 }
 
 const registeredMethods: ServiceMethod[] = [];
 const registeredReadStreams: ServiceMethod[] = [];
 const registeredWriteStreams: ServiceMethod[] = [];
 const registeredEvents: ServiceEvent[] = [];
-const fileImports: FileImports[] = [];
-const classInfos: ClassInfo[] = [];
+const registeredExtraTypes: ServiceExtraType[] = [];
 
 function handleServiceCallableMethod(className: string, name: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
 	// Ensure not already registered
 	if (registeredMethods.some(method => method.name == name && method.className == className)) return;
-	// console.log(`${className}.${name} is service callable`);
+	console.log(`${className}.${name} is service callable`);
 
 	const args: ServiceArg[] = [];
 	node.parameters.forEach(child => {
@@ -80,7 +66,7 @@ function handleServiceCallableMethod(className: string, name: string, node: ts.M
 	});
 
 	let returnType = "void";
-	if (node.type) returnType = node.type.getText();
+	if (node.type) returnType = processReturnType(className, node, tsInstance, typeChecker);
 
 	registeredMethods.push({
 		name,
@@ -93,7 +79,7 @@ function handleServiceCallableMethod(className: string, name: string, node: ts.M
 function handleServiceReadStream(className: string, name: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
 	// Ensure not already registered
 	if (registeredReadStreams.some(method => method.name == name && method.className == className)) return;
-	// console.log(`${className}.${name} is service readstream`);
+	console.log(`${className}.${name} is service readstream`);
 
 	const args: ServiceArg[] = [];
 	// Slice 1 as first arg is the stream passed in by the library
@@ -114,7 +100,7 @@ function handleServiceReadStream(className: string, name: string, node: ts.Metho
 function handleServiceWriteStream(className: string, name: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
 	// Ensure not already registered
 	if (registeredReadStreams.some(method => method.name == name && method.className == className)) return;
-	// console.log(`${className}.${name} is service readstream`);
+	console.log(`${className}.${name} is service readstream`);
 
 	const args: ServiceArg[] = [];
 	// Slice 1 as first arg is the stream passed in by the library
@@ -130,6 +116,14 @@ function handleServiceWriteStream(className: string, name: string, node: ts.Meth
 		args,
 		returnType
 	});
+}
+
+function processReturnType(className: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	if (!tsInstance.isTypeReferenceNode(node.type)) return node.type.getText();
+	// const name = node.type.typeName.getText();
+	maybeSaveTypeRefNode(className, node.type, tsInstance, typeChecker);
+
+	return node.type.getText();
 }
 
 const builtinTypes = [
@@ -151,26 +145,116 @@ const builtinTypes = [
 	"Map",
 	"Set"
 ];
+function maybeSaveTypeRefNode(className: string, node: ts.TypeReferenceNode, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	const name = node.typeName.getText();
+	const symbol = typeChecker.getSymbolAtLocation(node.typeName);
+	const type = typeChecker.getDeclaredTypeOfSymbol(symbol);
+
+	maybeSaveType(className, type, tsInstance, typeChecker);
+
+	if (node.typeArguments) {
+		node.typeArguments.forEach(arg => {
+			if (tsInstance.isArrayTypeNode(arg)) {
+				const et = arg.elementType;
+				if (tsInstance.isTypeReferenceNode(et)) maybeSaveTypeRefNode(className, et, tsInstance, typeChecker);
+				return;
+			} else if (!tsInstance.isTypeReferenceNode(arg)) {
+				// console.log(arg);
+				console.log(`Not a type reference node: ${arg.getText()}`);
+				return;
+			}
+			maybeSaveTypeRefNode(className, arg, tsInstance, typeChecker);
+		});
+	}
+}
+
+function maybeSaveType(className: string, type: ts.Type, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	if (!type.symbol) {
+		// @ts-ignore
+		console.log(`No symbol for type: ${type.intrinsicName} `);
+		return;
+	}
+	const name = type.symbol.name;
+	if ("resolvedTypeArguments" in type) {
+		(type.resolvedTypeArguments as ts.Type[]).forEach(arg => {
+			maybeSaveType(className, arg, tsInstance, typeChecker);
+		});
+	}
+	if (builtinTypes.includes(name) || registeredExtraTypes.some(t => t.name == name && t.className == className)) return;
+	// Create entry now to prevent cyclic dependency causing infinite loop
+	const entry: ServiceExtraType = { className, name, text: "" };
+	registeredExtraTypes.push(entry);
+
+	const props = typeChecker.getPropertiesOfType(type);
+	// Seems to be a enum? Enums are fucking weird, this is bad
+	if ("types" in type) {
+		const types = type.types as ts.LiteralType[];
+
+		let result = `export enum ${name} {\n`;
+		types.forEach(type => (result += `\t${type.symbol.escapedName} = "${type.value}",\n`));
+		result += "}";
+
+		entry.text = result;
+		return;
+	}
+
+	let result = `export interface ${name} {\n`;
+
+	props.forEach(prop => {
+		prop.declarations.forEach(decl => {
+			if (tsInstance.isPropertySignature(decl) && decl.type) {
+				const type = typeChecker.getTypeOfSymbolAtLocation(prop, decl);
+				if (type.isUnionOrIntersection()) maybeSaveUnionType(className, decl, tsInstance, typeChecker);
+				maybeSaveType(className, type, tsInstance, typeChecker);
+			}
+
+			result += `\t${decl.getFullText().trim()}\n`;
+		});
+	});
+
+	result += `}`;
+
+	entry.text = result;
+}
+
+function maybeSaveUnionType(className: string, decl: ts.PropertySignature, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+	if (!tsInstance.isTypeReferenceNode(decl.type)) return;
+
+	const symbol = typeChecker.getSymbolAtLocation(decl.type.typeName);
+	symbol.declarations.forEach(subDecl => {
+		if (!tsInstance.isTypeAliasDeclaration(subDecl) || !tsInstance.isUnionTypeNode(subDecl.type)) return;
+		const name = subDecl.name.getText();
+		if (registeredExtraTypes.some(t => t.name == name && t.className == className)) return;
+		const entry: ServiceExtraType = { className, name, text: "" };
+		registeredExtraTypes.push(entry);
+
+		subDecl.type.types.forEach(type => {
+			if (tsInstance.isTypeReferenceNode(type)) {
+				maybeSaveTypeRefNode(className, type, tsInstance, typeChecker);
+			}
+		});
+		entry.text = `export ${subDecl.getFullText().trim()}`;
+	});
+}
 
 function handleServiceEventMethod(className: string, name: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
-	// console.log(`${className}.${name} is service event`);
+	console.log(`${className}.${name} is service event`);
 
 	const args: ServiceArg[] = [];
 	node.parameters.forEach(child => {
+		if (tsInstance.isTypeReferenceNode(child.type)) maybeSaveTypeRefNode(className, child.type, tsInstance, typeChecker);
 		args.push({ text: child.getText(), name: child.name.getText() });
 	});
 
 	registeredEvents.push({ name, className, args });
 }
 
-function handleMethodDeclaration(filename: string, node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
+function handleMethodDeclaration(node: ts.MethodDeclaration, tsInstance: typeof ts, typeChecker: ts.TypeChecker) {
 	if (!tsInstance.isClassDeclaration(node.parent)) return;
 	if (!node.parent.name) return;
 
 	const name = node.name.getText();
 	const className = node.parent.name.getText();
-
-	if (!classInfos.some(c => c.name === className)) classInfos.push({ name: className, filename });
 
 	if (!node.modifiers) return;
 	const decorators = node.modifiers.filter(modifier => tsInstance.isDecorator(modifier));
@@ -197,27 +281,23 @@ function createServiceDefs() {
 		fs.mkdirSync(serviceDefsOutputDir);
 	}
 
-	// const classNames = new Set<string>();
-	// registeredMethods.forEach(method => {
-	// 	classNames.add(method.className);
-	// });
+	const classNames = new Set<string>();
+	registeredMethods.forEach(method => {
+		classNames.add(method.className);
+	});
 
-	classInfos.forEach(classInfo => {
-		const className = classInfo.name;
+	classNames.forEach(className => {
 		const path = `${serviceDefsOutputDir}/${className}.ts`;
 		if (fs.existsSync(path)) fs.unlinkSync(path);
 
 		const filter = (obj: { className: string }) => obj.className === className;
 		const classMethods = registeredMethods.filter(filter);
 		const classEvents = registeredEvents.filter(filter);
+		const classExtraTypes = registeredExtraTypes.filter(filter);
 		const classReadStreams = registeredReadStreams.filter(filter);
 		const classWriteStreams = registeredWriteStreams.filter(filter);
-		const emptyImports: FileImports = { filename: classInfo.filename, imports: [] };
-		const imports = fileImports.find(f => f.filename === classInfo.filename) ?? emptyImports;
 
-		if (classMethods.length == 0 && classEvents.length == 0 && classReadStreams.length == 0 && classWriteStreams.length == 0) return;
-
-		createClassServiceDefs(path, className, classMethods, classEvents, classReadStreams, classWriteStreams, imports);
+		createClassServiceDefs(path, className, classMethods, classEvents, classExtraTypes, classReadStreams, classWriteStreams);
 	});
 }
 
@@ -226,14 +306,11 @@ function createClassServiceDefs(
 	className: string,
 	methods: ServiceMethod[],
 	events: ServiceEvent[],
+	extraTypes: ServiceExtraType[],
 	readStreams: ServiceMethod[],
-	writeStreams: ServiceMethod[],
-	imports: FileImports
+	writeStreams: ServiceMethod[]
 ) {
 	let content = `import { ServiceHandler } from "${pathToServiceHandler}"\nimport { Readable } from "stream";\n\n`;
-	imports.imports.forEach(imp => (content += `import ${imp.clause} from \"${imp.module}\"\n`));
-	content += `\n`;
-
 	content += `class ${className} extends ServiceHandler {\n`;
 	content += `\tstatic serviceName = "${className}";\n\n`;
 
@@ -290,6 +367,11 @@ function createClassServiceDefs(
 	}
 	content += `}\n\n`;
 
+	// Write out extra types
+	extraTypes.forEach(type => {
+		content += `${type.text}\n\n`;
+	});
+
 	content += `\n\nexport { ${className} }`;
 
 	fs.writeFileSync(path, content);
@@ -307,23 +389,8 @@ export default function (program: ts.Program, pluginConfig: PluginConfig, { ts: 
 
 		return (sourceFile: ts.SourceFile) => {
 			function visit(node: ts.Node): ts.Node {
-				if (tsInstance.isImportDeclaration(node)) {
-					// @ts-ignore
-					const moduleSpecifier = node.moduleSpecifier.text;
-					const importClause = node.importClause;
-					// console.log(importClause.getText(), moduleSpecifier);
-
-					if (!fileImports.some(f => f.filename === sourceFile.fileName)) fileImports.push({ filename: sourceFile.fileName, imports: [] });
-					const fileImport = fileImports.find(f => f.filename === sourceFile.fileName);
-
-					const sharedTypeIdent = sharedTypeIdents.find(ident => moduleSpecifier.includes(ident.ident));
-					if (sharedTypeIdent) {
-						fileImport.imports.push({ clause: importClause.getText(), module: sharedTypeIdent.path });
-					}
-				}
-
 				if (tsInstance.isMethodDeclaration(node)) {
-					handleMethodDeclaration(sourceFile.fileName, node, tsInstance, typeChecker);
+					handleMethodDeclaration(node, tsInstance, typeChecker);
 				}
 
 				return tsInstance.visitEachChild(node, visit, ctx);
@@ -333,6 +400,7 @@ export default function (program: ts.Program, pluginConfig: PluginConfig, { ts: 
 
 			ran.add(sourceFile.fileName);
 			if (files.every(f => ran.has(f))) {
+				console.log(`Reached last file, generating service defs`);
 				createServiceDefs();
 			}
 

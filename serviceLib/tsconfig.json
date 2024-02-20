@@ -3,18 +3,17 @@
 		"emitDecoratorMetadata": true,
 		"experimentalDecorators": true,
 		"declaration": true,
-		"declarationMap": true,
+		"declarationMap": false,
 		"target": "ES6",
 		"moduleResolution": "node",
 		"module": "esnext",
 		"allowSyntheticDefaultImports": true,
 		"outDir": "dist/",
 		"baseUrl": "./src",
+		"rootDir": "./src",
 		"lib": ["ES2019"],
 		"composite": true,
-		"plugins": [
-			// { "transform": "./transformers/serviceTransformer.ts", "isEsm": true }
-		]
+		"plugins": []
 	},
 	"references": [],
 	"include": ["src/"],

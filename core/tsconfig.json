@@ -10,7 +10,7 @@
 		"baseUrl": "./src",
 		"lib": ["ES2019"],
 		"paths": {
-			"serviceLib/*": ["../../serviceLib/dist/src/*"],
+			"serviceLib/*": ["../../serviceLib/dist/*"],
 		},
 		"plugins": [
 			{ "transform": "typescript-transform-paths"},

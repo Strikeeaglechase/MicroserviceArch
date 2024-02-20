@@ -10,7 +10,8 @@
 		"baseUrl": "./src",
 		"lib": ["ES2019"],
 		"paths": {
-			"serviceLib/*": ["../../serviceLib/dist/src/*"],
+			"serviceLib/*": ["../../serviceLib/dist/*"],
+			"sharedTypes/*": ["../../sharedTypes/dist/src/*"]
 		},
 		"plugins": [
 			{ "transform": "../transformer/dist/serviceTransformer.js" },
@@ -19,5 +20,5 @@
 		]
 	},
 	"include": ["src/"],
-	"references": [{ "path": "../serviceLib" }]
+	"references": [{ "path": "../serviceLib" }, {"path": "../sharedTypes"}]
 }

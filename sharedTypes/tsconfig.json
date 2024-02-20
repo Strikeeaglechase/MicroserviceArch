@@ -1,0 +1,20 @@
+{
+	"compilerOptions": {
+		"emitDecoratorMetadata": true,
+		"experimentalDecorators": true,
+		"target": "ES5",
+		// "moduleResolution": "node",
+		// "module": "esnext",
+		"composite": true,
+		"allowSyntheticDefaultImports": true,
+		"outDir": "dist/",
+		"baseUrl": "./src",
+		"lib": [
+			"ES2019"
+		],
+	},
+	"references": [],
+	"include": [
+		"src/"
+	],
+}

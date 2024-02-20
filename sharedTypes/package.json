@@ -1,0 +1,18 @@
+{
+	"name": "service-shared-types",
+	"version": "1.0.0",
+	"description": "",
+	"main": "",
+	"scripts": {
+		"prepare": "ts-patch install -s",
+		"build": "npx tsc"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"dependencies": {
+		"ts-node": "^10.9.1",
+		"typescript": "^5.0.0",
+		"ts-patch": "^3.0.1"
+	}
+}
