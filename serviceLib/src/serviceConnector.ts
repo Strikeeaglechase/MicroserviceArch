@@ -370,7 +370,7 @@ class ServiceConnector {
 			connection = this.connectToService(serviceIdentifier);
 		}
 
-		if (connection.socket == null) {
+		if (connection.socket == null || connection.socket.readyState != WebSocket.OPEN) {
 			connection.queue.push(packet);
 			return;
 		} else {
