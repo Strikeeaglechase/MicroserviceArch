@@ -11,7 +11,7 @@ const serviceWriteStreamDecorator = `@WriteStream`;
 const libraryPath = locateLibrary();
 const serviceDefsOutputDir = `${libraryPath}/src/serviceDefs`;
 const pathToServiceHandler = `../serviceHandler.js`;
-const sharedTypePath = `../../sharedTypes/dist/src/index.js`;
+const sharedTypePath = `../../sharedTypes/dist/index.js`;
 
 function locateLibrary() {
 	let pathToCheck = `.`;

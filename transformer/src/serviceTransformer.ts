@@ -14,11 +14,11 @@ const pathToServiceHandler = `../serviceHandler.js`;
 const sharedTypeIdents: { ident: string; path: string }[] = [
 	{
 		ident: `shared`,
-		path: `../../../../VTOLLiveViewerCommon/dist/src/shared.js`
+		path: `../../../../VTOLLiveViewerCommon/dist/shared.js`
 	},
 	{
 		ident: `rpc.js`,
-		path: `../../../../VTOLLiveViewerCommon/dist/src/rpc.js`
+		path: `../../../../VTOLLiveViewerCommon/dist/rpc.js`
 	}
 ];
 

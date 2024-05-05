@@ -11,7 +11,7 @@
 		"lib": ["ES2019"],
 		"paths": {
 			"serviceLib/*": ["../../serviceLib/dist/*"],
-			"sharedTypes/*": ["../../sharedTypes/dist/src/*"]
+			"sharedTypes/*": ["../../sharedTypes/dist/*"]
 		},
 		"plugins": [
 			{ "transform": "../transformer/dist/serviceTransformer.js" },
