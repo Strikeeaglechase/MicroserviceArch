@@ -10,6 +10,11 @@ class MyMicroservice {
 		return 42;
 	}
 
+	@Callable
+	private extremelyLargeDataTest(data: string) {
+		console.log(`Received large data with ${data.length} bytes`);
+	}
+
 	@Event
 	public event(num: number) {}
 

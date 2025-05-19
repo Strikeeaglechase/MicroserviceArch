@@ -8,9 +8,19 @@ async function test() {
 	MyMicroservice.on("event", n => {
 		console.log(`Received event: ${n}`);
 	});
+
 	MyMicroservice.on("otherEvent", s => {
 		console.log(`Received other event: ${s}`);
 	});
+
+	// let data = "";
+	let data = new Array(128_000 * 150).fill("a").join("");
+	// for (let i = 0; i < 128_000 * 1024; i++) {
+	// 	data += "a";
+	// }
+
+	console.log(`Sending data with ${data.length} bytes`);
+	MyMicroservice.extremelyLargeDataTest(data);
 
 	const reply = await MyMicroservice.callableMethod("Hello World!");
 	console.log(`Reply: ${reply}`);
