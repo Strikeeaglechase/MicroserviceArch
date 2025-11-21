@@ -35,6 +35,12 @@ class ServiceConnector {
 	private clients: Client[] = [];
 	private serviceConnections: ServiceConnection[] = [];
 
+	public testDisconnectConns() {
+		this.serviceConnections.forEach(conn => {
+			if (conn.socket) conn.socket.close();
+		});
+	}
+
 	public connectedToCore = false;
 
 	private registeredServices: Record<string, object> = {};
@@ -212,11 +218,11 @@ class ServiceConnector {
 			console.log(`Service Handler registered service ${serviceIdentifier}`);
 		});
 
-		Object.keys(this.eventHandlers).forEach(event => {
-			const [serviceIdentifier, eventName] = event.split(".");
-			this.send(PacketBuilder.subscribeToEvent(serviceIdentifier, eventName), serviceIdentifier);
-			console.log(`Service Handler subscribed to event ${serviceIdentifier}.${event}`);
-		});
+		// Object.keys(this.eventHandlers).forEach(event => {
+		// 	const [serviceIdentifier, eventName] = event.split(".");
+		// 	this.send(PacketBuilder.subscribeToEvent(serviceIdentifier, eventName), serviceIdentifier);
+		// 	console.log(`Service Handler subscribed to event ${serviceIdentifier}.${event}`);
+		// });
 	}
 
 	private handleReply(packet: ServiceCallResponsePacket) {
@@ -397,6 +403,7 @@ class ServiceConnector {
 			return;
 		}
 
+		console.log(`Setting up connection to service ${conn.identifier}`);
 		const lookup = PacketBuilder.serviceIPLookup(conn.identifier);
 		this.send(lookup, CORE);
 	}
@@ -408,10 +415,19 @@ class ServiceConnector {
 			return;
 		}
 
+		console.log(`Service Handler connecting to service ${packet.serviceIdentifier} at ${packet.ip}:${packet.port}`);
 		conn.socket = new WebSocket(`${proto}${packet.ip}:${packet.port}`);
 
 		conn.socket.onopen = () => {
 			conn.socket.send(JSON.stringify(PacketBuilder.auth(this.authKey)));
+
+			Object.keys(this.eventHandlers).forEach(event => {
+				const [serviceIdentifier, eventName] = event.split(".");
+				if (serviceIdentifier != conn.identifier) return;
+				this.send(PacketBuilder.subscribeToEvent(serviceIdentifier, eventName), serviceIdentifier);
+				console.log(`Service Handler subscribed to event ${serviceIdentifier}.${event}`);
+			});
+
 			conn.queue.forEach(p => conn.socket.send(JSON.stringify(p)));
 			conn.queue = [];
 		};

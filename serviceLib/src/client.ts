@@ -91,6 +91,8 @@ class Client {
 	}
 
 	private handleSubscribeEvent(packet: SubscribeToEventPacket) {
+		const hasExistingSub = this.subscribedEvents.find(e => e.serviceIdentifier === packet.serviceIdentifier && e.event === packet.eventName);
+		if (hasExistingSub) return;
 		console.log(`Client ${this} subscribed to ${packet.serviceIdentifier}.${packet.eventName}`);
 		this.subscribedEvents.push({ serviceIdentifier: packet.serviceIdentifier, event: packet.eventName });
 	}
