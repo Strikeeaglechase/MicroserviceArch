@@ -10,7 +10,7 @@ const TIMEOUT = 15000;
 class Client {
 	public isAlive = true;
 	private lastPingSentAt = Date.now();
-	private lastPongReceivedAt = Date.now();
+	public lastPongReceivedAt = Date.now();
 	private waitingForPong = false;
 
 	public connectedAt = Date.now();

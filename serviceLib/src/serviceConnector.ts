@@ -270,6 +270,7 @@ class ServiceConnector {
 		});
 
 		const args = [writeStream, ...packet.arguments];
+		console.log(`Read stream start: ${packet.serviceIdentifier}.${packet.methodName}(${packet.arguments.map(a => JSON.stringify(a)).join(", ")})`);
 		await service[packet.methodName].apply(service, args);
 	}
 
@@ -378,6 +379,7 @@ class ServiceConnector {
 
 		if (connection.socket == null || connection.socket.readyState != WebSocket.OPEN) {
 			connection.queue.push(packet);
+			console.log(`Message for ${serviceIdentifier} queued, socket not open. Queue length: ${connection.queue.length}`);
 			return;
 		} else {
 			const json = JSON.stringify(packet);
@@ -428,6 +430,7 @@ class ServiceConnector {
 				console.log(`Service Handler subscribed to event ${serviceIdentifier}.${event}`);
 			});
 
+			console.log(`Dispatching ${conn.queue.length} queued packets to service ${conn.identifier}`);
 			conn.queue.forEach(p => conn.socket.send(JSON.stringify(p)));
 			conn.queue = [];
 		};

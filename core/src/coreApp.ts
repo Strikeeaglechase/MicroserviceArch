@@ -36,6 +36,10 @@ class Application {
 		this.tick();
 	}
 
+	public simulateTimeoutAll() {
+		this.clients.forEach(client => (client.lastPongReceivedAt = 0));
+	}
+
 	private handleConnection(conn: WebSocket) {
 		const client = new Client(conn, this);
 		console.log(`New connection: ${client.id}`);
