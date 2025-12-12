@@ -21,10 +21,90 @@ const NETWORK_TICK_RATE = 1000 / 60; // 60 times per second
 
 const proto = "ws://";
 
-interface ServiceConnection {
-	socket: WebSocket;
-	identifier: string;
-	queue: Packet[];
+enum ServiceConnectionState {
+	Init,
+	WaitingForCoreToExist,
+	WaitingForIPResolution,
+	Connecting,
+	Connected,
+	Disconnected
+}
+class ServiceConnection {
+	public killed = false;
+	public identifier: string;
+	public socket: WebSocket = null;
+	private queue: Packet[] = [];
+
+	private stateChangeAt: number;
+	public state: ServiceConnectionState;
+
+	public get readyForMessages() {
+		return this.socket != null && this.socket.readyState == WebSocket.OPEN;
+	}
+
+	constructor(ident: string) {
+		this.identifier = ident;
+		this.setState(ServiceConnectionState.Init);
+	}
+
+	public sendQueuedPackets() {
+		console.log(`Dispatching ${this.queue.length} queued packets to service ${this.identifier}`);
+		this.queue.forEach(p => this.socket.send(JSON.stringify(p)));
+		this.queue = [];
+	}
+
+	public sendOrEnqueue(packet: Packet) {
+		if (this.readyForMessages) {
+			const json = JSON.stringify(packet);
+			this.socket.send(json);
+		} else {
+			this.queue.push(packet);
+			console.log(`Message for ${this.identifier} queued, socket not open. Queue length: ${this.queue.length}`);
+		}
+	}
+
+	public setState(newState: ServiceConnectionState) {
+		if (this.state == newState) return;
+		this.state = newState;
+		this.stateChangeAt = Date.now();
+	}
+
+	public checkStateError(): { valid: boolean; reason?: string } {
+		if (this.state == ServiceConnectionState.Connected) return { valid: true };
+		if (this.killed) return { valid: false, reason: "Connection killed" };
+
+		const timeInState = Date.now() - this.stateChangeAt;
+		const errIfOver = (limit: number, reason: string) => {
+			if (timeInState > limit) return { valid: false, reason };
+			return { valid: true };
+		};
+
+		switch (this.state) {
+			case ServiceConnectionState.Init:
+				return errIfOver(1000, "Stuck in Init state for over 10 seconds");
+			case ServiceConnectionState.WaitingForCoreToExist:
+				return errIfOver(30000, "Waiting for core to exist for over 30 seconds");
+			case ServiceConnectionState.WaitingForIPResolution:
+				return errIfOver(15000, "Waiting for IP resolution for over 15 seconds");
+			case ServiceConnectionState.Connecting:
+				return errIfOver(10000, "Connecting for over 10 seconds");
+			case ServiceConnectionState.Disconnected:
+				return errIfOver(1000, "Disconnected for over 1 second (expected return to IP Resolution)");
+			default:
+				console.error(`Unknown ServiceConnection state: ${this.state}`);
+				return { valid: false, reason: "Unknown state" };
+		}
+	}
+
+	public killForError() {
+		this.killed = true;
+		if (this.socket) {
+			this.socket.close();
+			this.socket = null;
+		}
+
+		console.error(`Killing service conn ${this.identifier}, losing all queued packets (${this.queue.length})`);
+	}
 }
 
 class ServiceConnector {
@@ -34,12 +114,6 @@ class ServiceConnector {
 
 	private clients: Client[] = [];
 	private serviceConnections: ServiceConnection[] = [];
-
-	public testDisconnectConns() {
-		this.serviceConnections.forEach(conn => {
-			if (conn.socket) conn.socket.close();
-		});
-	}
 
 	public connectedToCore = false;
 
@@ -159,6 +233,20 @@ class ServiceConnector {
 	private tick() {
 		this.clients.forEach(client => client.update());
 		this.clients = this.clients.filter(client => client.isAlive);
+
+		if (this.connectedToCore) {
+			const clientsNeedingSetup = this.serviceConnections.filter(c => c.state == ServiceConnectionState.WaitingForCoreToExist);
+			clientsNeedingSetup.forEach(c => this.setupServiceConnection(c));
+		}
+
+		this.serviceConnections.forEach(conn => {
+			const stateCheck = conn.checkStateError();
+			if (!stateCheck.valid) {
+				console.error(`Service connection to ${conn.identifier} encountered error: ${stateCheck.reason}`);
+				conn.killForError();
+			}
+		});
+		this.serviceConnections = this.serviceConnections.filter(c => !c.killed);
 
 		setTimeout(() => this.tick(), NETWORK_TICK_RATE);
 	}
@@ -377,22 +465,11 @@ class ServiceConnector {
 			connection = this.connectToService(serviceIdentifier);
 		}
 
-		if (connection.socket == null || connection.socket.readyState != WebSocket.OPEN) {
-			connection.queue.push(packet);
-			console.log(`Message for ${serviceIdentifier} queued, socket not open. Queue length: ${connection.queue.length}`);
-			return;
-		} else {
-			const json = JSON.stringify(packet);
-			connection.socket.send(json);
-		}
+		connection.sendOrEnqueue(packet);
 	}
 
 	private connectToService(serviceIdentifier: string) {
-		const newConnObj: ServiceConnection = {
-			socket: null,
-			identifier: serviceIdentifier,
-			queue: []
-		};
+		const newConnObj = new ServiceConnection(serviceIdentifier);
 		this.serviceConnections.push(newConnObj);
 		this.setupServiceConnection(newConnObj);
 
@@ -401,11 +478,18 @@ class ServiceConnector {
 
 	private setupServiceConnection(conn: ServiceConnection) {
 		if (!this.connectedToCore) {
-			console.error(`Cannot connect to ${conn.identifier} because Service Handler is not connected to core`);
+			console.warn(`Cannot connect to ${conn.identifier} because Service Handler is not connected to core`);
+			conn.setState(ServiceConnectionState.WaitingForCoreToExist);
+			return;
+		}
+
+		if (conn.killed) {
+			console.warn(`setupServiceConnection called for killed connection to service ${conn.identifier}, ignoring`);
 			return;
 		}
 
 		console.log(`Setting up connection to service ${conn.identifier}`);
+		conn.setState(ServiceConnectionState.WaitingForIPResolution);
 		const lookup = PacketBuilder.serviceIPLookup(conn.identifier);
 		this.send(lookup, CORE);
 	}
@@ -417,10 +501,18 @@ class ServiceConnector {
 			return;
 		}
 
+		if (conn.killed) {
+			console.error(`IP Resolution received for killed connection to service ${packet.serviceIdentifier}, ignoring`);
+			return;
+		}
+
+		conn.setState(ServiceConnectionState.Connecting);
 		console.log(`Service Handler connecting to service ${packet.serviceIdentifier} at ${packet.ip}:${packet.port}`);
 		conn.socket = new WebSocket(`${proto}${packet.ip}:${packet.port}`);
 
 		conn.socket.onopen = () => {
+			console.log(`Service Handler connected to service ${packet.serviceIdentifier}`);
+			conn.setState(ServiceConnectionState.Connected);
 			conn.socket.send(JSON.stringify(PacketBuilder.auth(this.authKey)));
 
 			Object.keys(this.eventHandlers).forEach(event => {
@@ -430,9 +522,7 @@ class ServiceConnector {
 				console.log(`Service Handler subscribed to event ${serviceIdentifier}.${event}`);
 			});
 
-			console.log(`Dispatching ${conn.queue.length} queued packets to service ${conn.identifier}`);
-			conn.queue.forEach(p => conn.socket.send(JSON.stringify(p)));
-			conn.queue = [];
+			conn.sendQueuedPackets();
 		};
 		conn.socket.onmessage = event => this.handleServiceMessage(event.data.toString(), conn);
 		conn.socket.onerror = err =>
@@ -440,6 +530,7 @@ class ServiceConnector {
 		conn.socket.onclose = () => {
 			console.log(`Service Handler socket closed`);
 			conn.socket = null;
+			conn.setState(ServiceConnectionState.Disconnected);
 			setTimeout(() => this.setupServiceConnection(conn), 250);
 		};
 	}

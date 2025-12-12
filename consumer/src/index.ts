@@ -6,15 +6,15 @@ async function test() {
 	const connector = new ServiceConnector("ws://localhost:8000", "12348iaisdhu3");
 	await connector.connect();
 
-	setTimeout(() => {
-		console.log(`Test dropping connections`);
-		connector.testDisconnectConns();
+	// setTimeout(() => {
+	// 	console.log(`Test dropping connections`);
+	// connector.testDisconnectConns();
 
-		setTimeout(() => {
-			console.log(`Sending "Post DC event"`);
-			MyMicroservice.callableMethod("Post DC event");
-		}, 2000);
-	}, 2000);
+	// 	setTimeout(() => {
+	// 		console.log(`Sending "Post DC event"`);
+	// 		MyMicroservice.callableMethod("Post DC event");
+	// 	}, 2000);
+	// }, 2000);
 
 	MyMicroservice.on("event", n => {
 		console.log(`Received event: ${n}`);
