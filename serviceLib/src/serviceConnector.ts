@@ -33,7 +33,7 @@ class ServiceConnection {
 	public killed = false;
 	public identifier: string;
 	public socket: WebSocket = null;
-	private queue: Packet[] = [];
+	public queue: Packet[] = [];
 
 	private stateChangeAt: number;
 	public state: ServiceConnectionState;
@@ -81,7 +81,7 @@ class ServiceConnection {
 
 		switch (this.state) {
 			case ServiceConnectionState.Init:
-				return errIfOver(1000, "Stuck in Init state for over 10 seconds");
+				return errIfOver(10000, "Stuck in Init state for over 10 seconds");
 			case ServiceConnectionState.WaitingForCoreToExist:
 				return errIfOver(30000, "Waiting for core to exist for over 30 seconds");
 			case ServiceConnectionState.WaitingForIPResolution:
@@ -103,7 +103,7 @@ class ServiceConnection {
 			this.socket = null;
 		}
 
-		console.error(`Killing service conn ${this.identifier}, losing all queued packets (${this.queue.length})`);
+		console.error(`Killing service conn ${this.identifier}, packet queue on DC (${this.queue.length})`);
 	}
 }
 
@@ -114,6 +114,7 @@ class ServiceConnector {
 
 	private clients: Client[] = [];
 	private serviceConnections: ServiceConnection[] = [];
+	private droppedQueue: Record<string, Packet[]> = {};
 
 	public connectedToCore = false;
 
@@ -244,6 +245,8 @@ class ServiceConnector {
 			if (!stateCheck.valid) {
 				console.error(`Service connection to ${conn.identifier} encountered error: ${stateCheck.reason}`);
 				conn.killForError();
+				if (this.droppedQueue[conn.identifier] == undefined) this.droppedQueue[conn.identifier] = [];
+				this.droppedQueue[conn.identifier].push(...conn.queue);
 			}
 		});
 		this.serviceConnections = this.serviceConnections.filter(c => !c.killed);
@@ -486,6 +489,12 @@ class ServiceConnector {
 		if (conn.killed) {
 			console.warn(`setupServiceConnection called for killed connection to service ${conn.identifier}, ignoring`);
 			return;
+		}
+
+		if (this.droppedQueue[conn.identifier] != undefined) {
+			console.log(`Re-sending ${this.droppedQueue[conn.identifier].length} dropped packets to service ${conn.identifier}`);
+			this.droppedQueue[conn.identifier].forEach(p => conn.sendOrEnqueue(p));
+			delete this.droppedQueue[conn.identifier];
 		}
 
 		console.log(`Setting up connection to service ${conn.identifier}`);
